@@ -71,7 +71,7 @@ def create_dummies(df, columns):
     for c in columns:
         df = pd.get_dummies(df, columns=[c])
     return df
-
+    
 
 def get_weather_data():
     weather_16 = pd.read_csv('merra_data/accra_2016/weather_data_Accra_2016.csv')
