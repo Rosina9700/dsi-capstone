@@ -5,7 +5,7 @@ import numpy as np
 import statsmodels.api as sm
 
 def get_data(project_name):
-    filelocation='{}_featurized.csv'.format(project_name)
+    filelocation='data/Azimuth/clean/{}_featurized.csv'.format(project_name)
     df = pd.read_csv(filelocation)
     df['t'] = pd.to_datetime(df['t'], format='%Y-%m-%d %H:%M:%S')
     df.set_index('t',inplace=True)
@@ -89,15 +89,15 @@ if __name__== '__main__':
     df = calculate_power(df)
     y = get_ready_for_arima(df,freq='H', feature='power_all')
 
-    print'baseline model....'
-    baseline = Baseline()
-    length_data = len(y)
-    y_train = y[:int(length_data*(4./5))]
-    y_test = y[int(length_data*(4./5)):]
-    model = baseline.fit(y_train)
-    print 'Training rmse: {}'.format(model.score_)
-    test_score = model.score(y_test)
-    print 'Testing rmse: {}'.format(test_score)
+    # print'baseline model....'
+    # baseline = Baseline()
+    # length_data = len(y)
+    # y_train = y[:int(length_data*(4./5))]
+    # y_test = y[int(length_data*(4./5)):]
+    # model = baseline.fit(y_train)
+    # print 'Training rmse: {}'.format(model.score_)
+    # test_score = model.score(y_test)
+    # print 'Testing rmse: {}'.format(test_score)
 
     print 'find best sarima...'
     model = find_best_sarima(y,(0,2),24)
