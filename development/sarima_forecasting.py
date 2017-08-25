@@ -48,6 +48,7 @@ class Baseline (object):
         true = y.values
         rmse = np.sqrt(((true - predictions)**2).mean())
         return rmse
+
 def fit_sarima(y, arima_params, s_params):
     print 'SARIMAX: {} x {}'.format(arima_params, s_params)
     mod = sm.tsa.statespace.SARIMAX(y,
@@ -81,38 +82,44 @@ def find_best_sarima(y, range_ind, season):
     top_ind = np.array([m.aic for m in model_list]).argmin()
     return model_list[top_ind]
 
+def evaluate_sarima_predict(model, y):
+    start_date = y.index.min().strftime('%Y-%m-%d %H:%M:00')
+    pred = model.get_prediction(start=pd.to_datetime(start_date), dynamic=False)
+    y_forecasted = pred.predicted_mean
+    y_forecasted = y_forecasted.values.reshape(len(y_forecasted),1)
+    rmse = np.sqrt(((y_forecasted - y) ** 2).mean())
+    return rmse
+
 
 if __name__== '__main__':
-    print'get data....'
-    project_name = 'project_5526'
-    df = get_data(project_name)
-    df = calculate_power(df)
-    y = get_ready_for_arima(df,freq='H', feature='power_all')
+    projects = ['project_5526']
+    for p in projects:
+        print'get data....'
+        project_name = p
+        df = get_data(project_name)
+        df = calculate_power(df)
+        y = get_ready_for_arima(df,freq='H', feature='power_all')
 
-    print'baseline model....'
-    baseline = Baseline()
-    length_data = len(y)
-    y_train = y[:int(length_data*(4./5))]
-    y_test = y[int(length_data*(4./5)):]
-    model = baseline.fit(y_train)
-    print 'Training rmse: {}'.format(model.score_)
-    test_score = model.score(y_test)
-    print 'Testing rmse: {}'.format(test_score)
+        print'baseline model....'
+        baseline = Baseline()
+        length_data = len(y)
+        y_train = y[:int(length_data*(5./6))]
+        y_test = y[int(length_data*(5./6)):]
+        model = baseline.fit(y_train)
+        print 'Training rmse: {}'.format(model.score_)
+        b_test_score = model.score(y_test)
+        print 'Testing rmse: {}'.format(b_test_score)
 
-    print 'find best sarima...'
-    model = find_best_sarima(y,(0,2),24)
-    print('ARIMA - AIC:{}'.format(model.aic))
+        print 'find best sarima...'
+        model = find_best_sarima(y,(0,2),24)
+        best_params = model.specification
+        print('ARIMA{}x{}{} - AIC:{}'.format(best_params['order'], best_params['seasonal_order'],
+                                             best_params['seasonal_periods'],model.aic))
+        print 'specifications:\n{}'.format(best_params)
 
+        test_score = evaluate_sarima_predict(model, y_test)
+        print('The Mean Squared Error of our forecasts is {}'.format(round(test_score, 2)))
 
-    # print 'Arima model...'
-    # params = (0,1,0)
-    # seasonal_params = (0,1,0,24)
-    # mod = sm.tsa.statespace.SARIMAX(y,order=params,seasonal_order=seasonal_params,
-    #                                 enforce_stationarity=False,enforce_invertibility=False)
-    # results = mod.fit()
-    # print('ARIMA{}x{}2016 - AIC:{}'.format(params, seasonal_params, results.aic))
-    #
-    # pred = results.get_prediction(start=pd.to_datetime(y_test.index.min()), dynamic=False)
-    # y_forecasted = pred.predicted_mean
-    # rmse = np.sqrt(((y_forecasted.values - y_test.values) ** 2).mean())
-    # print('The Mean Squared Error of our forecasts is {}'.format(round(rmse, 2)))
+        filename = 'output_{}.txt'.format(project_name)
+        with open(filename, "w") as text_file:
+            text_file.write("{}\nBaseline RMSE: {}\nBest parameters: \n{}\n SARIMA AIC: {}\n RMSE: {}".format(project_name,b_test_score,best_params,model.aic,test_score))
