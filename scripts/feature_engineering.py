@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime
 
 def get_clean_data(filename):
-    df = pd.read_csv('../capstone_data/Azimuth/clean/{}'.format(filename))
+    df = pd.read_csv('../../capstone_data/Azimuth/clean/{}'.format(filename))
     df['t'] = pd.to_datetime(df['t'], format='%Y-%m-%d %H:%M:%S')
     df.set_index('t',inplace=True)
     return df
@@ -71,11 +71,11 @@ def create_dummies(df, columns):
     for c in columns:
         df = pd.get_dummies(df, columns=[c])
     return df
-    
+
 
 def get_weather_data():
-    weather_16 = pd.read_csv('merra_data/accra_2016/weather_data_Accra_2016.csv')
-    weather_17 = pd.read_csv('merra_data/accra_2017/weather_data_Accra_2017.csv')
+    weather_16 = pd.read_csv('../../capstone_data/merra_data/accra_2016/weather_data_Accra_2016.csv')
+    weather_17 = pd.read_csv('../../capstone_data/merra_data/accra_2017/weather_data_Accra_2017.csv')
     # append 2017 to 2016
     weather = weather_16.append(weather_17, ignore_index=True)
     # create column with datetime timestamp
@@ -136,7 +136,7 @@ def create_time_aggregates(df,params):
     return df
 
 if __name__=='__main__':
-    project_name = 'project_6d8c'
+    project_name = 'project_4229'
     # read in data
     print 'reading clean data...'
     filename = '{}_clean.csv'.format(project_name)
@@ -170,7 +170,7 @@ if __name__=='__main__':
 
     df3 = add_weather_data(df2, weather)
     print 'writing to csv...'
-    filelocation='../capstone_data/Azimuth/clean/{}_featurized.csv'.format(project_name)
+    filelocation='../../capstone_data/Azimuth/clean/{}_featurized.csv'.format(project_name)
     df3.to_csv(filelocation)
 
     # drop continuous outage points

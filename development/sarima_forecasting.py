@@ -3,6 +3,7 @@ import itertools
 import pandas as pd
 import numpy as np
 import statsmodels.api as sm
+from datetime import datetime
 
 def get_data(project_name):
     filelocation='{}_featurized.csv'.format(project_name)
@@ -15,10 +16,10 @@ def calculate_power(df):
     df['power_1'] = df['load_v1rms'] * df['load_i1rms']
     df['power_2'] = df['load_v2rms'] * df['load_i2rms']
     df['power_3'] = df['load_v3rms'] * df['laod_i3rms']
-    df['power_all'] = df['power_1'] +df['power_2']+df['power_3']
+    df['power_all'] = df['power_1'] +df['power_2']+df['power_3'] * 5./12
     return df
 
-def get_ready_for_arima(df, feature, freq='H'):
+def get_ready_for_sarima(df, feature, freq='H'):
     y = pd.DataFrame(df[feature])
     y = y[feature].resample(freq).mean()
     y = y.fillna(y.bfill())
@@ -74,9 +75,10 @@ def test_all_params(y, pdq, seasonal_pdq):
     return model_list
 
 def find_best_sarima(y, range_ind, season):
-    p = d = q = range(range_ind[0],range_ind[1])
-    pdq = list(itertools.product(p, d, q))
-    seasonal_pdq = [(x[0], x[1], x[2], season) for x in list(itertools.product(p, d, q))]
+    p = range(range_ind[0],range_ind[1])
+    q = range(1,3)
+    pdq = list(itertools.product(p, q))
+    seasonal_pdq = [(x[0], 0, x[2], season) for x in list(itertools.product(p, q))]
     warnings.filterwarnings("ignore") # specify to ignore warning messages
     model_list = test_all_params(y, pdq, seasonal_pdq)
     top_ind = np.array([m.aic for m in model_list]).argmin()
@@ -92,13 +94,13 @@ def evaluate_sarima_predict(model, y):
 
 
 if __name__== '__main__':
-    projects = ['project_5526']
+    projects = ['project_5526','project_6d8c','project_1074','project_bc67']
     for p in projects:
         print'get data....'
         project_name = p
         df = get_data(project_name)
         df = calculate_power(df)
-        y = get_ready_for_arima(df,freq='H', feature='power_all')
+        y = get_ready_for_sarima(df,freq='H', feature='power_all')
 
         print'baseline model....'
         baseline = Baseline()
@@ -111,7 +113,7 @@ if __name__== '__main__':
         print 'Testing rmse: {}'.format(b_test_score)
 
         print 'find best sarima...'
-        model = find_best_sarima(y,(0,2),24)
+        model = find_best_sarima(y,(0,3),24)
         best_params = model.specification
         print('ARIMA{}x{}{} - AIC:{}'.format(best_params['order'], best_params['seasonal_order'],
                                              best_params['seasonal_periods'],model.aic))
@@ -120,6 +122,7 @@ if __name__== '__main__':
         test_score = evaluate_sarima_predict(model, y_test)
         print('The Mean Squared Error of our forecasts is {}'.format(round(test_score, 2)))
 
-        filename = 'output_{}.txt'.format(project_name)
+        now = datetime.now().strftime('%m_%d_%H_%M_%S')
+        filename = 'output_{}_{}.txt'.format(project_name,now)
         with open(filename, "w") as text_file:
             text_file.write("{}\nBaseline RMSE: {}\nBest parameters: \n{}\n SARIMA AIC: {}\n RMSE: {}".format(project_name,b_test_score,best_params,model.aic,test_score))
