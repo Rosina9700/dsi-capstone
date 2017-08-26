@@ -7,7 +7,16 @@ from datetime import datetime
 from baseline_models import Baseline_average, Baseline_previous
 
 def get_data(project_name):
-    filelocation='../../capstone_data/Azimuth/clean/{}_featurized.csv'.format(project_name)
+    '''
+    Read in the featurized data for the given project_name
+    PARAMETERS:
+    -----------
+    project_name: String
+    RETURNS:
+    -----------
+    df: Pandas DataFrame with DatetimeIndex
+    '''
+    filelocation='{}_featurized.csv'.format(project_name)
     # filelocation='{}_featurized.csv'.format(project_name)
     df = pd.read_csv(filelocation)
     df['t'] = pd.to_datetime(df['t'], format='%Y-%m-%d %H:%M:%S')
@@ -16,6 +25,15 @@ def get_data(project_name):
     return df
 
 def calculate_power(df):
+    '''
+    Calculate total power for that site
+    PARAMETERS:
+    -----------
+    df: Pandas DataFrame with DatetimeIndex
+    RETURNS:
+    -----------
+    df: Pandas DataFrame with DatetimeIndex
+    '''
     df['power_1'] = df['load_v1rms'] * df['load_i1rms']
     df['power_2'] = df['load_v2rms'] * df['load_i2rms']
     df['power_3'] = df['load_v3rms'] * df['laod_i3rms']
@@ -23,12 +41,36 @@ def calculate_power(df):
     return df
 
 def get_ready_for_sarima(df, feature, freq='H'):
+    '''
+    Calculate total power for that site
+    PARAMETERS:
+    -----------
+    df: Pandas DataFrame with DatetimeIndex
+    feature: String
+    freq: String following panda resample frequency nomenclature
+    RETURNS:
+    -----------
+    y: Pandas DataFrame with DatetimeIndex
+    '''
     y = pd.DataFrame(df[feature])
     y = y[feature].resample(freq).mean()
     y = y.fillna(y.bfill())
     return pd.DataFrame(y)
 
 def baseline_rolling_predictions(model, y, end, window):
+    '''
+    Calculate rolling forecasts and their rmse for the baseline class
+    defined in baseline_models.py
+    -----------
+    model: Baseline Class Object
+    y: Pandas Series
+    end: Integer
+    RETURNS:
+    -----------
+    forecast: Numpy array
+    rmse: float
+    model: Baseline Class Object
+    '''
     forecast = np.zeros(window)
     for i in xrange(window):
         y_temp = y[0:end+i]
@@ -39,6 +81,19 @@ def baseline_rolling_predictions(model, y, end, window):
     return forecast, rmse, model
 
 def baseline_cross_val_score(model, y, chunks, window=4):
+    '''
+    Calculates the cross validation score for Baseline models according to the
+    format used for evaluating SARIMA models.
+    -----------
+    model: Baseline Class Object
+    y: Pandas Series
+    chunks: integer
+    window: integer
+    RETURNS:
+    -----------
+    rmse: float
+    model: Baseline Class Object
+    '''
     length = len(y)-window
     chunk_size = length/chunks
     rmses = []
@@ -50,6 +105,16 @@ def baseline_cross_val_score(model, y, chunks, window=4):
 
 
 def fit_sarima(y, arima_params, s_params):
+    '''
+    Fit a SARIMA model to data with given parameters
+    -----------
+    y: Pandas Series
+    arima_params: Tuple
+    s_params: Tuple
+    RETURNS:
+    -----------
+    results: SARIMAResults Class Object
+    '''
     print 'SARIMAX: {} x {}'.format(arima_params, s_params)
     mod = sm.tsa.statespace.SARIMAX(y,
                                     order=arima_params,
@@ -61,6 +126,20 @@ def fit_sarima(y, arima_params, s_params):
     return results
 
 def rolling_predictions_sarima(y,end,window,params):
+    '''
+    Calculating the one-step ahead forecast and rmse for
+    a given dataset and SARIMA model.
+    -----------
+    y: Pandas Series
+    end: integer
+    window: integer
+    params: Tuple
+    RETURNS:
+    -----------
+    forecast: Numpy array
+    rmse: float
+    model: SARIMAResults Class Object
+    '''
     forecast = np.zeros(window)
     for i in xrange(window):
         y_temp = y[0:end+i]
@@ -76,6 +155,20 @@ def rolling_predictions_sarima(y,end,window,params):
 
 
 def cross_val_score(y, params, chunks, window=4):
+    '''
+    Break a training set into chunks and calcualtes the average
+    rmse from forecasts. The training set gradually grow by size chunk at
+    each iteration.
+    -----------
+    y: Pandas Series
+    params: Tuple
+    chunks: integer
+    window: integer
+    RETURNS:
+    -----------
+    rmse: float
+    model: SARIMAResults Class Object
+    '''
     length = len(y)-window
     chunk_size = length/chunks
     rmses = []
@@ -86,11 +179,35 @@ def cross_val_score(y, params, chunks, window=4):
     return np.asarray(rmses), model
 
 def cross_validation_sarima(y, param, param_seasonal, k):
+    '''
+    Calls the cross_val_score function to conduction cross validation and return
+    the average rmse for the given model
+    -----------
+    y: Pandas Series
+    param: Tuple
+    param_seasonal: Tuple
+    k: integer
+    RETURNS:
+    -----------
+    reults: Tuple(SARIMAXResults Object, float)
+    '''
     rmses, model = cross_val_score(y, (param, param_seasonal), chunks=k)
     ave_rmse = rmses.mean()
     return (model, ave_rmse)
 
 def grid_search_sarima(y, pdq, seasonal_pdq, k):
+    '''
+    For the pdq's and seasonal_pdq's provided, fit every possible model
+    and cross validate with a k chunks.
+    -----------
+    y: Pandas Series
+    param: List of Tuples
+    param_seasonal: List of Tuples
+    k: Integer
+    RETURNS:
+    -----------
+    results: List of Tuples
+    '''
     print 'number of models {}'.format(len(pdq)*len(seasonal_pdq))
     results = []
     for param in pdq:
@@ -100,6 +217,18 @@ def grid_search_sarima(y, pdq, seasonal_pdq, k):
     return results
 
 def find_best_sarima(y, params, season, k=10):
+    '''
+    Grid search over every possible combination of p,d,q and season provided. In
+    the cross validation, use k chunks to calculate rmse.
+    -----------
+    y: Pandas Series
+    param: Tuple
+    season: Inter
+    k: Integer
+    RETURNS:
+    -----------
+    results: SARIMAXResults Object, float
+    '''
     pdq = list(itertools.product(params[0], params[1], params[2]))
     seasonal_pdq = [(x[0], x[1], x[2], season) for x in pdq]
     warnings.filterwarnings("ignore") # specify to ignore warning messages
@@ -136,12 +265,12 @@ if __name__== '__main__':
         print '\nfind best sarima...'
         y_train = y[:-24]
         y_test = y[-24:]
-        # p = range(0,5)
-        # q = range(1,3)
-        # d = range(0,2)
-        p = range(1,2)
-        q = range(0,1)
-        d = range(0,1)
+        p = range(0,5)
+        q = range(1,3)
+        d = range(0,2)
+        # p = range(1,2)
+        # q = range(0,1)
+        # d = range(0,1)
         params = (p,d,q)
         model, s_train_rmse = find_best_sarima(y_train,params,24, k=cv_folds)
         best_params = model.specification
