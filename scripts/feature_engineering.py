@@ -136,7 +136,7 @@ def create_time_aggregates(df,params):
     return df
 
 if __name__=='__main__':
-    project_name = 'project_4229'
+    project_name = 'project_5526'
     # read in data
     print 'reading clean data...'
     filename = '{}_clean.csv'.format(project_name)

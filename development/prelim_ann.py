@@ -45,8 +45,9 @@ if __name__=='__main__':
     dataset = df['power_all']
     dataset = dataset.resample('H').mean()
     dataset = dataset.fillna(dataset.bfill())
-    dataset = dataset.values.reshape(len(dataset),1)
 
+    dataset_index = dataset.index
+    dataset = dataset.values.reshape(len(dataset),1)
 
     # split into train and test sets
     train_size = int(len(dataset) * 0.67)
@@ -62,24 +63,35 @@ if __name__=='__main__':
 
 
     # reshape into X=t and Y=t+1
-    look_back = 1
+    look_back = 12
     trainX, trainY = create_dataset(train, look_back)
     testX, testY = create_dataset(test, look_back)
+    #
+    # # reshape input to be [samples, time steps, features]
+    # trainX = np.reshape(trainX, (trainX.shape[0], 1, trainX.shape[1]))
+    # testX = np.reshape(testX, (testX.shape[0], 1, testX.shape[1]))
 
     # reshape input to be [samples, time steps, features]
-    trainX = np.reshape(trainX, (trainX.shape[0], 1, trainX.shape[1]))
-    testX = np.reshape(testX, (testX.shape[0], 1, testX.shape[1]))
+    trainX = np.reshape(trainX, (trainX.shape[0], trainX.shape[1], 1))
+    testX = np.reshape(testX, (testX.shape[0], testX.shape[1], 1))
 
     # create and fit the LSTM network
+    batch_size = 1
     model = Sequential()
-    model.add(LSTM(4, input_shape=(1, look_back)))
+    
+    model.add(LSTM(4, batch_input_shape=(batch_size, look_back, 1), stateful=True, return_sequences=True))
+    # model.add(LSTM(8, batch_input_shape=(batch_size, look_back, 1), stateful=True, return_sequences=True))
+    model.add(LSTM(4, batch_input_shape=(batch_size, look_back, 1), stateful=True))
     model.add(Dense(1))
     model.compile(loss='mean_squared_error', optimizer='adam')
-    model.fit(trainX, trainY, epochs=20, batch_size=1, verbose=2)
+    for i in range(20):
+    	model.fit(trainX, trainY, epochs=1, batch_size=batch_size, verbose=2, shuffle=False)
+    	# model.reset_states()
 
     # make predictions
-    trainPredict = model.predict(trainX)
-    testPredict = model.predict(testX)
+    trainPredict = model.predict(trainX, batch_size=batch_size)
+    model.reset_states()
+    testPredict = model.predict(testX, batch_size=batch_size)
     # invert predictions
     trainPredict = scaler.inverse_transform(trainPredict)
     trainY = scaler.inverse_transform([trainY])
@@ -90,7 +102,6 @@ if __name__=='__main__':
     print('Train Score: %.2f RMSE' % (trainScore))
     testScore = math.sqrt(mean_squared_error(testY[0], testPredict[:,0]))
     print('Test Score: %.2f RMSE' % (testScore))
-
     # shift train predictions for plotting
     trainPredictPlot = np.empty_like(dataset)
     trainPredictPlot[:, :] = np.nan
