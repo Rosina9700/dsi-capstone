@@ -238,7 +238,7 @@ def find_best_sarima(y, params, season, k=10):
 
 
 if __name__== '__main__':
-    projects = ['project_5526','project_6d8c','project_1074','project_bc67']
+    projects = ['project_6d8c']
     for p in projects:
         print'get data for {}....'.format(p)
         project_name = p
