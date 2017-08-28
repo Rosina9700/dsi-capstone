@@ -10,8 +10,9 @@ class Baseline_average(object):
 
     def fit(self, y):
         self.y_train = y
-        y['dayofweek'] = y.index.dayofweek
-        y['hour'] = y.index.hour
+        dateindex = y.index
+        y['dayofweek'] = dateindex.dayofweek
+        y['hour'] = dateindex.hour
         self.averages = y.groupby(['dayofweek','hour'])['power_all'].mean()
         y.drop(['dayofweek','hour'],axis=1, inplace=True)
         self.score_ = self.score(y)
@@ -51,7 +52,7 @@ class Baseline_previous(object):
     def forecast(self, steps):
         forecasts = np.zeros(steps)
         for i in xrange(0,steps):
-            forecasts[i-1] = self.y_train.values[-1]
+            forecasts[i] = self.y_train.values[-1]
         return forecasts
 
 

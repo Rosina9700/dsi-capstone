@@ -80,7 +80,7 @@ def baseline_rolling_predictions(model, y, end, window):
     rmse = np.sqrt(((true-forecast)**2).mean())
     return forecast, rmse, model
 
-def baseline_cross_val_score(model, y, chunks, window=4):
+def baseline_cross_val_score(model, y, chunks, window=2):
     '''
     Calculates the cross validation score for Baseline models according to the
     format used for evaluating SARIMA models.
@@ -154,7 +154,7 @@ def rolling_predictions_sarima(y,end,window,params):
     return forecast, rmse, model
 
 
-def cross_val_score(y, params, chunks, window=4):
+def cross_val_score(y, params, chunks, window=1):
     '''
     Break a training set into chunks and calcualtes the average
     rmse from forecasts. The training set gradually grow by size chunk at
@@ -178,7 +178,7 @@ def cross_val_score(y, params, chunks, window=4):
         rmses.append(rmse)
     return np.asarray(rmses), model
 
-def cross_validation_sarima(y, param, param_seasonal, k):
+def cross_validation_sarima(y, param, param_seasonal, k, window=1):
     '''
     Calls the cross_val_score function to conduction cross validation and return
     the average rmse for the given model
@@ -191,7 +191,7 @@ def cross_validation_sarima(y, param, param_seasonal, k):
     -----------
     reults: Tuple(SARIMAXResults Object, float)
     '''
-    rmses, model = cross_val_score(y, (param, param_seasonal), chunks=k)
+    rmses, model = cross_val_score(y, (param, param_seasonal), chunks=k, window=window)
     ave_rmse = rmses.mean()
     return (model, ave_rmse)
 
@@ -230,8 +230,8 @@ def find_best_sarima(y, params, season, k=10):
     results: SARIMAXResults Object, float
     '''
     pdq = list(itertools.product(params[0], params[1], params[2]))
-    # s_pdq = list(itertools.product(range(0,2), range(0,2), range(0,2)))
-    seasonal_pdq = [(x[0], x[1], x[2], season) for x in pdq]
+    s_pdq = list(itertools.product(range(0,2), range(0,2)))
+    seasonal_pdq = [(x[0], 0, x[1], season) for x in s_pdq]
     warnings.filterwarnings("ignore") # specify to ignore warning messages
     results = grid_search_sarima(y, pdq, seasonal_pdq, k)
     top_ind = np.array([r[1] for r in results]).argmin()
@@ -239,7 +239,7 @@ def find_best_sarima(y, params, season, k=10):
 
 
 if __name__== '__main__':
-    projects = ['project_5526','project_6d8c','project_1074','project_bc67']
+    projects = ['project_5526']
     for p in projects:
         print'get data for {}....'.format(p)
         project_name = p
@@ -247,15 +247,16 @@ if __name__== '__main__':
         y = get_ready_for_sarima(df,freq='H', feature='power_all')
         y_train = y[:-24]
         y_test = y[-24:]
-        cv_folds = 10
+        cv_folds = 5
+        window = 1
         #
         print '\nbaseline - previous...'
         b_previous = Baseline_previous()
-        b1_train_rmse, model = baseline_cross_val_score(b_previous, y_train, cv_folds)
+        b1_train_rmse, model = baseline_cross_val_score(b_previous, y_train, cv_folds, window)
         forecast, b1_test_rmse, model = baseline_rolling_predictions(b_previous, y,len(y_train)-24,24)
         print 'Baseline-previous train RMSE {}'.format(b1_train_rmse)
         print 'Baseline-previous test RMSE {}'.format(b1_test_rmse)
-        #
+
         print 'baseline - averages....'
         b_average = Baseline_average()
         b2_train_rmse, model = baseline_cross_val_score(b_average, y_train, cv_folds)
@@ -266,13 +267,14 @@ if __name__== '__main__':
         print '\nfind best sarima...'
         y_train = y[:-24]
         y_test = y[-24:]
-        p = range(0,5)
+        p = range(0,4)
         q = range(1,3)
         d = range(0,2)
         # p = range(1,2)
         # q = range(0,1)
         # d = range(0,1)
         params = (p,d,q)
+        # could look over less pdq for seasonal to save time.
         model, s_train_rmse = find_best_sarima(y_train,params,24, k=cv_folds)
         best_params = model.specification
         params = (best_params['order'],best_params['seasonal_order'])
