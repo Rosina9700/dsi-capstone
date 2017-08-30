@@ -52,11 +52,11 @@ def get_ready_for_sarima(df, feature, freq='H'):
     -----------
     y: Pandas DataFrame with DatetimeIndex
     '''
-    y = pd.DataFrame(df[feature])
-    y = y[feature].resample(freq).mean()
+    y = df[feature]
     y = y.fillna(y.bfill())
+    y = y.resample(freq).sum()
     return pd.DataFrame(y)
-
+    
 def baseline_rolling_predictions(model, y, end, window):
     '''
     Calculate rolling forecasts and their rmse for the baseline class

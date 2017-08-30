@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import statsmodels.api as sm
 from datetime import datetime
-from baseline_models import Baseline_average, Baseline_previous
+from baseline_models import Baseline_average, Baseline_previous, baseline_rolling_predictions, baseline_cross_val_score
 
 def get_data(project_name):
     '''
@@ -17,7 +17,6 @@ def get_data(project_name):
     df: Pandas DataFrame with DatetimeIndex
     '''
     filelocation='{}_featurized.csv'.format(project_name)
-    # filelocation='{}_featurized.csv'.format(project_name)
     df = pd.read_csv(filelocation)
     df['t'] = pd.to_datetime(df['t'], format='%Y-%m-%d %H:%M:%S')
     df.set_index('t',inplace=True)
@@ -40,7 +39,7 @@ def calculate_power(df):
     df['power_all'] = df['power_1'] +df['power_2']+df['power_3'] * 5./12
     return df
 
-def get_ready_for_sarima(df, feature, freq='H'):
+def get_ready_for_sarima(df, agg, feature, freq='H'):
     '''
     Calculate total power for that site
     PARAMETERS:
@@ -54,54 +53,12 @@ def get_ready_for_sarima(df, feature, freq='H'):
     '''
     y = df[feature]
     y = y.fillna(y.bfill())
-    y = y.resample(freq).sum()
-    return pd.DataFrame(y)
-
-def baseline_rolling_predictions(model, y, end, window):
-    '''
-    Calculate rolling forecasts and their rmse for the baseline class
-    defined in baseline_models.py
-    -----------
-    model: Baseline Class Object
-    y: Pandas Series
-    end: Integer
-    RETURNS:
-    -----------
-    forecast: Numpy array
-    rmse: float
-    model: Baseline Class Object
-    '''
-    forecast = np.zeros(window)
-    for i in xrange(window):
-        y_temp = y[0:end+i]
-        model = model.fit(y)
-        forecast[i]= model.forecast(steps=1)[0]
-    true = y[end:end+window].values
-    rmse = np.sqrt(((true-forecast)**2).mean())
-    return forecast, rmse, model
-
-def baseline_cross_val_score(model, y, chunks, window=1):
-    '''
-    Calculates the cross validation score for Baseline models according to the
-    format used for evaluating SARIMA models.
-    -----------
-    model: Baseline Class Object
-    y: Pandas Series
-    chunks: integer
-    window: integer
-    RETURNS:
-    -----------
-    rmse: float
-    model: Baseline Class Object
-    '''
-    length = len(y)-window
-    chunk_size = length/chunks
-    rmses = []
-    for i in xrange(chunks):
-        end_index = (i+1)*chunk_size
-        forecast, rmse, model = baseline_rolling_predictions(model, y,end_index,window)
-        rmses.append(rmse)
-    return np.asarray(rmses).mean(), model
+    if agg == 'sum':
+        y = y.resample(freq).sum()
+        return pd.DataFrame(y)
+    elif agg == 'mean':
+        y = y.resample(freq).mean()
+        return pd.DataFrame(y)
 
 
 def fit_sarima(y, arima_params, s_params):
@@ -116,7 +73,8 @@ def fit_sarima(y, arima_params, s_params):
     results: SARIMAResults Class Object
     '''
     print 'SARIMAX: {} x {}'.format(arima_params, s_params)
-    mod = sm.tsa.statespace.SARIMAX(y,
+
+    mod = sm.tsa.statespace.SARIMAX(y[0], y[1],
                                     order=arima_params,
                                     seasonal_order=s_params,
                                     enforce_stationarity=False,
@@ -141,15 +99,21 @@ def rolling_predictions_sarima(y,end,window,params):
     model: SARIMAResults Class Object
     '''
     forecast = np.zeros(window)
+    endog = y.ix[:,0]
+    exog = sm.add_constant(y.ix[:,1:])
     for i in xrange(window):
-        y_temp = y[0:end+i]
+        endog_temp = endog.ix[:end+i]
+        exog_temp =  exog.ix[:end+i,:]
+        print 'length of cross validation data {}'.format(len(endog_temp))
         try:
-            model = fit_sarima(y_temp,params[0],params[1])
+            model = fit_sarima((endog_temp, exog_temp),params[0],params[1])
         except:
             print 'SKIPPED {}-{}'.format(params[0], params[1])
-            continue
-        forecast[i]= model.forecast(steps=1).values[0]
-    true = y[end:end+window].values
+            model = None
+            break
+        print exog.ix[end+i,:].values.reshape(1,exog.shape[1])
+        forecast[i]= model.forecast(steps=1,exog=exog.ix[end+i,:].values.reshape(1,exog.shape[1])).values[0]
+    true = endog[end:end+window].values
     rmse = np.sqrt(((true-forecast)**2).mean())
     return forecast, rmse, model
 
@@ -231,6 +195,7 @@ def find_best_sarima(y, params, season, k=10):
     '''
     pdq = list(itertools.product(params[0], params[1], params[2]))
     s_pdq = list(itertools.product(range(0,2), range(0,2)))
+    # seasonal_pdq = [(1, 0, 1, season) for x in s_pdq]
     seasonal_pdq = [(x[0], 0, x[1], season) for x in s_pdq]
     warnings.filterwarnings("ignore") # specify to ignore warning messages
     results = grid_search_sarima(y, pdq, seasonal_pdq, k)
@@ -239,30 +204,40 @@ def find_best_sarima(y, params, season, k=10):
 
 
 if __name__== '__main__':
-    projects = ['project_bc67']
+    # projects = ['project_5526','project_6d8c','project_1074']
+    projects = ['project_5526']
+    model_name = 'SarimaX'
+    # projects = ['../../capstone_data/Azimuth/clean/project_6d8c']
     for p in projects:
         print'get data for {}....'.format(p)
         project_name = p
-        df = get_data(project_name)
-        y = get_ready_for_sarima(df,freq='H', feature='power_all')
+        # project_name = p[-12:]
+        df = get_data(p)
+
+        y = get_ready_for_sarima(df,agg='sum',freq='H', feature='power_all')
+        exog = get_ready_for_sarima(df,agg='mean', freq='H', feature='T')
+        y['T_previous'] = exog['T'].shift(1)
+        y = y.fillna(y.bfill())
+        y['weekday'] = y.index.dayofweek
+        y['weekday'] = y['weekday'].apply(lambda x: 1 if x < 5 else 0)
+        cv_folds = 15
         y_train = y[:-24]
         y_test = y[-24:]
-        cv_folds = 6
-        #
+
         print '\nbaseline - previous...'
         b_previous = Baseline_previous()
-        b1_train_rmse, model = baseline_cross_val_score(b_previous, y_train, cv_folds)
-        forecast, b1_test_rmse, model = baseline_rolling_predictions(b_previous, y,len(y_train)-24,24)
+        b1_train_rmse, model = baseline_cross_val_score(b_previous, pd.DataFrame(y_train.ix[:,0]), cv_folds)
+        forecast, b1_test_rmse, model = baseline_rolling_predictions(b_previous, pd.DataFrame(y.ix[:,0]),len(y_train),24)
         print 'Baseline-previous train RMSE {}'.format(b1_train_rmse)
         print 'Baseline-previous test RMSE {}'.format(b1_test_rmse)
-        #
+
         print 'baseline - averages....'
         b_average = Baseline_average()
-        b2_train_rmse, model = baseline_cross_val_score(b_average, y_train, cv_folds)
-        forecast, b2_test_rmse, model = baseline_rolling_predictions(b_average, y,len(y_train)-24,24)
+        b2_train_rmse, model = baseline_cross_val_score(b_average, pd.DataFrame(y_train.ix[:,0]), cv_folds)
+        forecast, b2_test_rmse, model = baseline_rolling_predictions(b_average, pd.DataFrame(y.ix[:,0]),len(y_train),24)
         print 'Baseline-averages train RMSE {}'.format(b2_train_rmse)
         print 'Baseline-averages test RMSE {}'.format(b2_test_rmse)
-
+        #
         print '\nfind best sarima...'
         y_train = y[:-24]
         y_test = y[-24:]
@@ -276,18 +251,18 @@ if __name__== '__main__':
         model, s_train_rmse = find_best_sarima(y_train,params,24, k=cv_folds)
         best_params = model.specification
         params = (best_params['order'],best_params['seasonal_order'])
-        test_forecast, s_test_rmse, model = rolling_predictions_sarima(y,len(y_train)-24,24,params)
+        test_forecast, s_test_rmse, model = rolling_predictions_sarima(y,len(y_train),24,params)
         print('SARIMA{}x{}{} - AIC:{}'.format(best_params['order'], best_params['seasonal_order'],
                                          best_params['seasonal_periods'],model.aic))
         print 'Training cross validation RMSE: {}'.format(s_train_rmse)
         print'Test cross validation RMSE {}'.format(s_test_rmse)
-        # #
+
         now = datetime.now().strftime('%m_%d_%H_%M_%S')
         filename = 'output_{}_{}.txt'.format(project_name,now)
         test = 1
         train = 0
         with open(filename, "w") as text_file:
-            train_results = '{},{},{},{},{},{}'.format(project_name,train,b1_train_rmse,b2_train_rmse,s_train_rmse,best_params)
-            test_results = '{},{},{},{},{},{}'.format(project_name,test,b1_test_rmse,b2_test_rmse,s_test_rmse,best_params)
-            string_to_write = 'project,test,baseline_previous,baseline_averages,sarima,sarima_params\n{}\n{}'.format(train_results,test_results)
+            train_results = '{},{},{},{},{},{},{}'.format(project_name,model_name,train,b1_train_rmse,b2_train_rmse,s_train_rmse,best_params)
+            test_results = '{},{},{},{},{},{},{}'.format(project_name,model_name,test,b1_test_rmse,b2_test_rmse,s_test_rmse,best_params)
+            string_to_write = 'project,model,test,baseline_previous,baseline_averages,sarimax,sarimax_params\n{}\n{}'.format(train_results,test_results)
             text_file.write(string_to_write)
