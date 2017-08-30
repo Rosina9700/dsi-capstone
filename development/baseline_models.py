@@ -55,21 +55,48 @@ class Baseline_previous(object):
             forecasts[i] = self.y_train.values[-1]
         return forecasts
 
+def baseline_rolling_predictions(model, y, end, window):
+    '''
+    Calculate rolling forecasts and their rmse for the baseline class
+    defined in baseline_models.py
+    -----------
+    model: Baseline Class Object
+    y: Pandas Series
+    end: Integer
+    RETURNS:
+    -----------
+    forecast: Numpy array
+    rmse: float
+    model: Baseline Class Object
+    '''
+    forecast = np.zeros(window)
+    for i in xrange(window):
+        y_temp = y[0:end+i]
+        model = model.fit(y)
+        forecast[i]= model.forecast(steps=1)[0]
+    true = y[end:end+window].values
+    rmse = np.sqrt(((true-forecast)**2).mean())
+    return forecast, rmse, model
 
-#
-# def baseline_previous(y):
-#     cv_data = get_cross_val_data(y,5)
-#     diff_sq = []
-#     for i in range(len(cv_data)-1):
-#         if len(cv_data[i+1]) != 0:
-#             y_true = cv_data[i+1].values[0]
-#             y_pred = cv_data[i].values[-1]
-#             d = (y_true - y_pred)**2
-#             diff_sq.append(d)
-#     rmse = np.sqrt(np.asarray(diff_sq).mean())
-#     return rmse
-
-def baseline_previous(y):
-    y_pred = y.shift()[1:]
-    rmse = np.sqrt(((y_pred - y[1:]) ** 2).mean())
-    return rmse
+def baseline_cross_val_score(model, y, chunks, window):
+    '''
+    Calculates the cross validation score for Baseline models according to the
+    format used for evaluating SARIMA models.
+    -----------
+    model: Baseline Class Object
+    y: Pandas Series
+    chunks: integer
+    window: integer
+    RETURNS:
+    -----------
+    rmse: float
+    model: Baseline Class Object
+    '''
+    length = len(y.ix[:,0])-window
+    chunk_size = (length/2)/chunks
+    rmses = []
+    for i in xrange(chunks+1):
+        end_index = (length/2) + (i)*chunk_size
+        forecast, rmse, model = baseline_rolling_predictions(model, y,end_index,window)
+        rmses.append(rmse)
+    return np.asarray(rmses).mean(), model

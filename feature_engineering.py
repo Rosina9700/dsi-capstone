@@ -135,13 +135,57 @@ def create_time_aggregates(df,params):
                 df = time_window_aggregate(df,f,k,key)
     return df
 
+def outage_smoothing(df, feature, time_window):
+    '''
+    Calculates the aggregate value of a column for a given time_window starting
+    before each point
+    PARAMETERS
+    ----------
+    df: Pandas DataFrame
+    feature: column name of feature to shift
+    time_window: time window to aggregate over, use convention used in Pandas
+                 reindex or rolling:http://pandas.pydata.org/pandas-docs/stable/timeseries.html#offset-aliases
+    func: Aggregate function to use
+    '''
+    temp = pd.DataFrame(df[feature].shift(1))
+    mean = temp.rolling(time_window,min_periods=1).mean()
+    mean = mean.fillna(temp.bfill())
+    std = temp.rolling(time_window,min_periods=1).std()
+    std = std.fillna(temp.bfill())
+    combined = (mean - 1 * std)
+    result = np.where(temp < combined,None, temp)
+    col_name = feature+'_old'
+    df[col_name] = df[feature]
+    df[feature] = result
+    df[feature] = df[feature].fillna(method='ffill')
+    return df
+
+def calculate_power(df):
+    '''
+    Calculate total power for that site
+    PARAMETERS:
+    -----------
+    df: Pandas DataFrame with DatetimeIndex
+    RETURNS:
+    -----------
+    df: Pandas DataFrame with DatetimeIndex
+    '''
+    df['power_1'] = df['load_v1rms'] * df['load_i1rms']
+    df['power_2'] = df['load_v2rms'] * df['load_i2rms']
+    df['power_3'] = df['load_v3rms'] * df['laod_i3rms']
+    df['power_all'] = ( df['power_1'] +df['power_2']+df['power_3'] ) * 5./12
+    return df
+
 if __name__=='__main__':
-    project_name = 'project_6d8c'
+    project_name = 'project_a1e0'
     # read in data
     print 'reading clean data...'
     filename = '{}_clean.csv'.format(project_name)
     df = get_clean_data(filename)
     df = get_relay_start(df)
+    df = calculate_power(df)
+    df = outage_smoothing(df, 'power_all', (12*60*40))
+
     # created shifted features
     print 'creating shifted features...'
     df = shift_features(df, ['load_v1rms','load_v2rms','load_v3rms',
