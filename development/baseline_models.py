@@ -72,9 +72,10 @@ def baseline_rolling_predictions(model, y, end, window):
     forecast = np.zeros(window)
     for i in xrange(window):
         y_temp = y[0:end+i]
-        model = model.fit(y)
+        model = model.fit(y_temp)
         forecast[i]= model.forecast(steps=1)[0]
     true = y[end:end+window].values
+    forecast = forecast.reshape(window,1)
     rmse = np.sqrt(((true-forecast)**2).mean())
     return forecast, rmse, model
 
@@ -93,6 +94,7 @@ def baseline_cross_val_score(model, y, chunks, window):
     model: Baseline Class Object
     '''
     length = len(y.ix[:,0])-window
+    chunks = min(length/2,chunks)
     chunk_size = (length/2)/chunks
     rmses = []
     for i in xrange(chunks+1):

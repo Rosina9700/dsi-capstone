@@ -2,6 +2,7 @@ import warnings
 import itertools
 import pandas as pd
 import numpy as np
+import csv
 import statsmodels.api as sm
 from datetime import datetime
 from baseline_models import Baseline_average, Baseline_previous, baseline_rolling_predictions, baseline_cross_val_score
@@ -252,18 +253,16 @@ def find_best_sarima(y, params, season, k=10):
     results: SARIMAXResults Object, float
     '''
     pdq = list(itertools.product(params[0], params[1], params[2]))
-    s_pdq = list(itertools.product(range(0,2), range(0,2)))
+    s_pdq = list(itertools.product(range(0,2), range(0,2), range(0,2)))
     if season == 7:
-        seasonal_pdq = [(x[0], x[0], x[1], season) for x in s_pdq]
+        seasonal_pdq = [(x[0], x[1], x[2], season) for x in s_pdq]
     else:
-        seasonal_pdq = [(x[0], 0, x[1], season) for x in s_pdq]
+        seasonal_pdq = [(x[0], 0, x[2], season) for x in s_pdq]
     warnings.filterwarnings("ignore") # specify to ignore warning messages
     results_s, results_sX = grid_search_sarima(y, pdq, seasonal_pdq, k)
     # results_s, results_sX = grid_search_sarima(y, [(0,1,1)], [(1,0,1,season)], k)
     top_ind_s = np.nanargmin(np.array([r[0] for r in results_s]))
     top_ind_sX = np.nanargmin(np.array([r[0] for r in results_sX]))
-    print np.array([r[0] for r in results_s])
-    print top_ind_s
     return (results_s[top_ind_s][1], results_s[top_ind_s][0]), (results_sX[top_ind_sX][1], results_sX[top_ind_sX][0])
 
 if __name__== '__main__':
@@ -283,13 +282,13 @@ if __name__== '__main__':
     y = add_exogs(df, y, freq=f)
     cv_folds = 25
 
-    y_train = y[:-season]
-    y_test = y[-season:]
+    y_train = y[:-2*season]
+    y_test = y[-2*season:]
 
     print '\nbaseline - previous...'
     b_previous = Baseline_previous()
     b1_train_rmse, model = baseline_cross_val_score(b_previous, pd.DataFrame(y_train.ix[:,0]), cv_folds, window=1)
-    forecast, b1_test_rmse, model = baseline_rolling_predictions(b_previous, pd.DataFrame(y.ix[:,0]),len(y_train),season)
+    forecast, b1_test_rmse, model = baseline_rolling_predictions(b_previous, pd.DataFrame(y.ix[:,0]),len(y_train),2*season)
     print 'Baseline-previous train RMSE {}'.format(b1_train_rmse)
     print 'Baseline-previous test RMSE {}'.format(b1_test_rmse)
 
@@ -299,14 +298,14 @@ if __name__== '__main__':
         print 'baseline - averages....'
         b_average = Baseline_average()
         b2_train_rmse, model = baseline_cross_val_score(b_average, pd.DataFrame(y_train.ix[:,0]), cv_folds, window=1)
-        forecast, b2_test_rmse, model = baseline_rolling_predictions(b_average, pd.DataFrame(y.ix[:,0]),len(y_train),season)
+        forecast, b2_test_rmse, model = baseline_rolling_predictions(b_average, pd.DataFrame(y.ix[:,0]),len(y_train),2*season)
         print 'Baseline-averages train RMSE {}'.format(b2_train_rmse)
         print 'Baseline-averages test RMSE {}'.format(b2_test_rmse)
 
     #
     print '\nfind best sarima...'
-    y_train = y[:-season]
-    y_test = y[-season:]
+    y_train = y[:-2*season]
+    y_test = y[-2*season:]
     p = range(0,3)
     q = range(1,3)
     d = range(0,2)
@@ -322,7 +321,7 @@ if __name__== '__main__':
     print('SARIMA{}x{}{} - AIC:{}'.format(params[0], params[1],
                                      best_params_s['seasonal_periods'],model_s.aic))
 
-    results_s = rolling_predictions_sarima(y,len(y_train),season,params,types=0)
+    results_s = rolling_predictions_sarima(y,len(y_train),2*season,params,types=0)
     test_rmse_s = results_s['sarima'][1]
     print 'Sarima training cross validation RMSE: {}'.format(train_rmse_s)
     print'Sarima test RMSE {}'.format(test_rmse_s)
@@ -336,21 +335,24 @@ if __name__== '__main__':
     print('SARIMA{}x{}{} - AIC:{}'.format(params[0], params[1],
                                      best_params_sX['seasonal_periods'],model_sX.aic))
 
-    results_sX = rolling_predictions_sarima(y,len(y_train),season,params,types=2)
+    results_sX = rolling_predictions_sarima(y,len(y_train),2*season,params,types=2)
     test_rmse_sX = results_sX['sarimaX'][1]
     print 'SarimaX training cross validation RMSE: {}'.format(train_rmse_sX)
     print'SarimaX test RMSE {}'.format(test_rmse_sX)
 
     now = datetime.now().strftime('%m_%d_%H_%M_%S')
-    filename = 'output_{}_{}.txt'.format(project_name,now)
+    filename = 'output_{}_{}.csv'.format(project_name,now)
     test = 1
     train = 0
     model_name_s = 'sarima'
     model_name_sX = 'sarimaX'
-    with open(filename, "w") as text_file:
-        train_results_s = '{},{},{},{},{},{},{}'.format(project_name, model_name_s, train, b1_train_rmse, b2_train_rmse, train_rmse_s, best_params_s)
-        test_results_s = '{},{},{},{},{},{},{}'.format(project_name, model_name_s, test, b1_test_rmse, b2_test_rmse, test_rmse_s, best_params_s)
-        train_results_sX = '{},{},{},{},{},{},{}'.format(project_name, model_name_sX, train, b1_train_rmse, b2_train_rmse, train_rmse_sX, best_params_sX)
-        test_results_sX = '{},{},{},{},{},{},{}'.format(project_name, model_name_sX, test, b1_test_rmse, b2_test_rmse, test_rmse_sX, best_params_sX)
-        string_to_write = 'project,model,test,baseline_previous,baseline_averages,sarimax,sarimax_params\n{}\n{}\n{}\n{}'.format(train_results_s, test_results_s, train_results_sX, test_results_sX)
-        text_file.write(string_to_write)
+    train_results_s = '{};{};{};{};{};{};{}'.format(project_name, model_name_s, train, b1_train_rmse, b2_train_rmse, train_rmse_s, best_params_s)
+    test_results_s = '{};{};{};{};{};{};{}'.format(project_name, model_name_s, test, b1_test_rmse, b2_test_rmse, test_rmse_s, best_params_s)
+    train_results_sX = '{};{};{};{};{};{};{}'.format(project_name, model_name_sX, train, b1_train_rmse, b2_train_rmse, train_rmse_sX, best_params_sX)
+    test_results_sX = '{};{};{};{};{};{};{}'.format(project_name, model_name_sX, test, b1_test_rmse, b2_test_rmse, test_rmse_sX, best_params_sX)
+    header = 'project;model;test;baseline_previous;baseline_averages;sarimax;sarimax_params'
+    to_print = [header,train_results_s, test_results_s, train_results_sX, test_results_sX]
+    with open(filename, "wb") as file:
+        for r in to_print:
+            file.write(r)
+            file.write('\n')

@@ -21,12 +21,7 @@ def get_data(project_name):
     df = pd.read_csv(filelocation)
     df['t'] = pd.to_datetime(df['t'], format='%Y-%m-%d %H:%M:%S')
     df.set_index('t',inplace=True)
-    if 'power_all_old' in df.columns:
-        return df
-    else:
-        df = calculate_power(df)
-
-
+    df = calculate_power(df)
     return df
 
 def calculate_power(df):
@@ -59,39 +54,13 @@ def get_ready_for_sarima(df, agg, feature, freq='H'):
     '''
     y = df[feature]
     y = y.fillna(y.bfill())
-    ignore_last=False
-    ignore_first=True
-
-    if freq=='H':
-        if y.index.max().minute != 0:
-            ignore_last=True
-        if y.index.min().minute != 0:
-            ignore_first=True
-    elif freq=='D':
-        if y.index.max().hour < 23:
-            ignore_last=True
-        if y.index.min().hour > 0:
-            ignore_first=True
-
     if agg == 'sum':
         y = y.resample(freq).sum()
-
+        return pd.DataFrame(y)
     elif agg == 'mean':
         y = y.resample(freq).mean()
-    if ignore_last ==True:
-        y = y[:-1]
-    if ignore_first ==True:
-        y = y[1:]
+        return pd.DataFrame(y)
 
-    return pd.DataFrame(y)
-
-def add_exogs(df, y, freq):
-    exog = get_ready_for_sarima(df,agg='mean', freq=f, feature='T')
-    y['T-1'] = exog['T'].shift(1)
-    y = y.fillna(y.bfill())
-    y['weekday'] = y.index.dayofweek
-    y['weekday'] = y['weekday'].apply(lambda x: 1 if x < 5 else 0)
-    return y
 
 def fit_sarimaX(y, arima_params, s_params):
     '''
@@ -201,9 +170,7 @@ def cross_val_score(y, params, chunks, window=1):
     rmse: float
     model: SARIMAResults Class Object
     '''
-
     length = len(y.ix[:,0])-window
-    chunks = min(chunks, length/2)
     chunk_size = (length/2)/chunks
     rmses_s = []
     rmses_sX = []
@@ -253,65 +220,58 @@ def find_best_sarima(y, params, season, k=10):
     '''
     pdq = list(itertools.product(params[0], params[1], params[2]))
     s_pdq = list(itertools.product(range(0,2), range(0,2)))
-    if season == 7:
-        seasonal_pdq = [(x[0], x[0], x[1], season) for x in s_pdq]
-    else:
-        seasonal_pdq = [(x[0], 0, x[1], season) for x in s_pdq]
+    seasonal_pdq = [(x[0], 0, x[1], season) for x in s_pdq]
     warnings.filterwarnings("ignore") # specify to ignore warning messages
     results_s, results_sX = grid_search_sarima(y, pdq, seasonal_pdq, k)
-    # results_s, results_sX = grid_search_sarima(y, [(0,1,1)], [(1,0,1,season)], k)
-    top_ind_s = np.nanargmin(np.array([r[0] for r in results_s]))
-    top_ind_sX = np.nanargmin(np.array([r[0] for r in results_sX]))
-    print np.array([r[0] for r in results_s])
-    print top_ind_s
+    # results_s, results_sX = grid_search_sarima(y, [(0,1,1)], [(1,0,1,24)], k)
+    top_ind_s = np.array([r[0] for r in results_s]).argmin()
+    top_ind_sX = np.array([r[0] for r in results_sX]).argmin()
     return (results_s[top_ind_s][1], results_s[top_ind_s][0]), (results_sX[top_ind_sX][1], results_sX[top_ind_sX][0])
 
 if __name__== '__main__':
     project_name = sys.argv[1]
-    f = sys.argv[2]
-    season = int(sys.argv[3])
-    location = sys.argv[4]
-    if location == 'local':
-        p = '../../capstone_data/Azimuth/clean/{}'.format(project_name)
-    else:
-        p = project_name
-
+    p = project_name
+    # p = '../../capstone_data/Azimuth/clean/{}'.format(project_name)
     print'get data for {}....'.format(p)
     df = get_data(p)
 
-    y = get_ready_for_sarima(df,agg='sum',freq=f, feature='power_all')
-    y = add_exogs(df, y, freq=f)
-    cv_folds = 25
+    f ='H'
 
-    y_train = y[:-season]
-    y_test = y[-season:]
+    y = get_ready_for_sarima(df,agg='sum',freq=f, feature='power_all')
+    exog = get_ready_for_sarima(df,agg='mean', freq=f, feature='T')
+    y['T_previous'] = exog['T'].shift(1)
+    y = y.fillna(y.bfill())
+    y['weekday'] = y.index.dayofweek
+    y['weekday'] = y['weekday'].apply(lambda x: 1 if x < 5 else 0)
+    cv_folds = 35
+
+    y_train = y[:-24]
+    y_test = y[-24:]
 
     print '\nbaseline - previous...'
     b_previous = Baseline_previous()
     b1_train_rmse, model = baseline_cross_val_score(b_previous, pd.DataFrame(y_train.ix[:,0]), cv_folds, window=1)
-    forecast, b1_test_rmse, model = baseline_rolling_predictions(b_previous, pd.DataFrame(y.ix[:,0]),len(y_train),season)
+    forecast, b1_test_rmse, model = baseline_rolling_predictions(b_previous, pd.DataFrame(y.ix[:,0]),len(y_train),24)
     print 'Baseline-previous train RMSE {}'.format(b1_train_rmse)
     print 'Baseline-previous test RMSE {}'.format(b1_test_rmse)
 
+    # print 'baseline - averages....'
+    # b_average = Baseline_average()
+    # b2_train_rmse, model = baseline_cross_val_score(b_average, pd.DataFrame(y_train.ix[:,0]), cv_folds, window=1)
+    # forecast, b2_test_rmse, model = baseline_rolling_predictions(b_average, pd.DataFrame(y.ix[:,0]),len(y_train),24)
+    # print 'Baseline-averages train RMSE {}'.format(b2_train_rmse)
+    # print 'Baseline-averages test RMSE {}'.format(b2_test_rmse)
     b2_train_rmse = None
     b2_test_rmse = None
-    if f=='H':
-        print 'baseline - averages....'
-        b_average = Baseline_average()
-        b2_train_rmse, model = baseline_cross_val_score(b_average, pd.DataFrame(y_train.ix[:,0]), cv_folds, window=1)
-        forecast, b2_test_rmse, model = baseline_rolling_predictions(b_average, pd.DataFrame(y.ix[:,0]),len(y_train),season)
-        print 'Baseline-averages train RMSE {}'.format(b2_train_rmse)
-        print 'Baseline-averages test RMSE {}'.format(b2_test_rmse)
-
     #
     print '\nfind best sarima...'
-    y_train = y[:-season]
-    y_test = y[-season:]
+    y_train = y[:-24]
+    y_test = y[-24:]
     p = range(0,3)
     q = range(1,3)
     d = range(0,2)
     params = (p,d,q)
-    results_s, results_sX = find_best_sarima(y_train, params, season, k=cv_folds)
+    results_s, results_sX = find_best_sarima(y_train, params, 24, k=cv_folds)
 
     # For Sarima model
     model_s = results_s[0]
@@ -322,7 +282,7 @@ if __name__== '__main__':
     print('SARIMA{}x{}{} - AIC:{}'.format(params[0], params[1],
                                      best_params_s['seasonal_periods'],model_s.aic))
 
-    results_s = rolling_predictions_sarima(y,len(y_train),season,params,types=0)
+    results_s = rolling_predictions_sarima(y,len(y_train),24,params,types=0)
     test_rmse_s = results_s['sarima'][1]
     print 'Sarima training cross validation RMSE: {}'.format(train_rmse_s)
     print'Sarima test RMSE {}'.format(test_rmse_s)
@@ -336,7 +296,7 @@ if __name__== '__main__':
     print('SARIMA{}x{}{} - AIC:{}'.format(params[0], params[1],
                                      best_params_sX['seasonal_periods'],model_sX.aic))
 
-    results_sX = rolling_predictions_sarima(y,len(y_train),season,params,types=2)
+    results_sX = rolling_predictions_sarima(y,len(y_train),24,params,types=2)
     test_rmse_sX = results_sX['sarimaX'][1]
     print 'SarimaX training cross validation RMSE: {}'.format(train_rmse_sX)
     print'SarimaX test RMSE {}'.format(test_rmse_sX)

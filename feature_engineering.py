@@ -177,14 +177,14 @@ def calculate_power(df):
     return df
 
 if __name__=='__main__':
-    project_name = 'project_a1e0'
+    project_name = 'project_e871'
     # read in data
     print 'reading clean data...'
     filename = '{}_clean.csv'.format(project_name)
     df = get_clean_data(filename)
     df = get_relay_start(df)
     df = calculate_power(df)
-    df = outage_smoothing(df, 'power_all', (12*60*40))
+    # df = outage_smoothing(df, 'power_all', (12*24*48))
 
     # created shifted features
     print 'creating shifted features...'
@@ -216,6 +216,8 @@ if __name__=='__main__':
     print 'writing to csv...'
     filelocation='../capstone_data/Azimuth/clean/{}_featurized.csv'.format(project_name)
     df3.to_csv(filelocation)
+    print df3.index.min()
+    print df3.index.max()
 
     # drop continuous outage points
     # df2 = df[~((df['relay_est']==1)&(df['relay_est-1']==1))]
