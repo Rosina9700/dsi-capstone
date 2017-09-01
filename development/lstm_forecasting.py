@@ -5,6 +5,7 @@ import numpy as np
 import math
 import matplotlib.pyplot as plt
 from datetime import datetime
+import sys
 
 from keras.models import Sequential
 from keras.layers import Dense
@@ -14,48 +15,9 @@ from sklearn.metrics import mean_squared_error
 from backports import weakref
 from datetime import datetime
 from baseline_models import Baseline_average, Baseline_previous
+from data_wrangling import Results_data, Data_preparation
 
 np.random.seed(7)
-
-def calculate_power(df):
-    '''
-    Calculate total power for that site
-    PARAMETERS:
-    -----------
-    df: Pandas DataFrame with DatetimeIndex
-    RETURNS:
-    -----------
-    df: Pandas DataFrame with DatetimeIndex
-    '''
-    df['power_1'] = df['load_v1rms'] * df['load_i1rms']
-    df['power_2'] = df['load_v2rms'] * df['load_i2rms']
-    df['power_3'] = df['load_v3rms'] * df['laod_i3rms']
-    df['power_all'] = df['power_1'] +df['power_2']+df['power_3'] * 5./12
-    return df
-
-def get_data(project_name):
-    '''
-    Read in the featurized data for the given project_name
-    PARAMETERS:
-    -----------
-    project_name: String
-    RETURNS:
-    -----------
-    df: Pandas DataFrame with DatetimeIndex
-    '''
-    filelocation='../../capstone_data/Azimuth/clean/{}_featurized.csv'.format(project_name)
-    # filelocation='{}_featurized.csv'.format(project_name)
-    df = pd.read_csv(filelocation)
-    df['t'] = pd.to_datetime(df['t'], format='%Y-%m-%d %H:%M:%S')
-    df.set_index('t',inplace=True)
-    df = calculate_power(df)
-    return df
-
-def resample(y, freq='H'):
-    y = y.fillna(y.bfill())
-    y = y.resample(freq).sum()
-    y = pd.DataFrame(y)
-    return y
 
 def shift_features(df, feature, deltas):
     '''
@@ -88,221 +50,112 @@ def scale_data(y_train, y_test):
     y_test_scaled = scaler.transform(y_test)
     return y_train_scaled, y_test_scaled, scaler
 
-# def get_ready_for_lstm(df, feature, deltas, freq='H'):
-#     '''
-#     Extract column of interest, resample and turn into a Pandas DataFrame
-#     PARAMETERS:
-#     -----------
-#     df: Pandas DataFrame with DatetimeIndex
-#     feature: String
-#     freq: String following panda resample frequency nomenclature
-#     RETURNS:
-#     -----------
-#     y: Pandas DataFrame with DatetimeIndex
-#     '''
-#     y = df[feature]
-#     y = shift_features(y,feature, deltas)
-#     return np.array(y[feature].values), np.array(y.drop(feature, axis=1).values)
 
-
-# def baseline_rolling_predictions(model, y, end, window):
-#     '''
-#     Calculate rolling forecasts and their rmse for the baseline class
-#     defined in baseline_models.py
-#     -----------
-#     model: Baseline Class Object
-#     y: Pandas Series
-#     end: Integer
-#     RETURNS:
-#     -----------
-#     forecast: Numpy array
-#     rmse: float
-#     model: Baseline Class Object
-#     '''
-#     forecast = np.zeros(window)
-#     for i in xrange(window):
-#         y_temp = y[0:end+i]
-#         model = model.fit(y)
-#         forecast[i]= model.forecast(steps=1)[0]
-#     true = y[end:end+window].values
-#     rmse = np.sqrt(((true-forecast)**2).mean())
-#     return forecast, rmse, model
-#
-# def baseline_cross_val_score(model, y, chunks, window=4):
-#     '''
-#     Calculates the cross validation score for Baseline models according to the
-#     format used for evaluating SARIMA models.
-#     -----------
-#     model: Baseline Class Object
-#     y: Pandas Series
-#     chunks: integer
-#     window: integer
-#     RETURNS:
-#     -----------
-#     rmse: float
-#     model: Baseline Class Object
-#     '''
-#     length = len(y)-window
-#     chunk_size = length/chunks
-#     rmses = []
-#     for i in xrange(chunks):
-#         end_index = (i+1)*chunk_size
-#         forecast, rmse, model = baseline_rolling_predictions(model, y,end_index,window)
-#         rmses.append(rmse)
-#     return np.asarray(rmses).mean(), model
-#
-#
-# def fit_lstm(y, model, epochs, batch_size):
-#     '''
-#     Fit a LSTM model to data over given number of epochs
-#     -----------
-#     y: Pandas Series
-#     model: Keras LSTM model
-#     epoch: Integer
-#     batch_size: Integer
-#     RETURNS:
-#     -----------
-#     results: SARIMAResults Class Object
-#     '''
-#     print 'LSTM: {} x {}'.format(arima_params, s_params)
-#     for i in range(epochs):
-#     	model.fit(trainX, trainY, epochs=epochs, batch_size=batch_size, verbose=2, shuffle=False)
-#     return model
-#
-# def rolling_predictions_sarima(y,end,window,params):
-#     '''
-#     Calculating the one-step ahead forecast and rmse for
-#     a given dataset and SARIMA model.
-#     -----------
-#     y: Pandas Series
-#     end: integer
-#     window: integer
-#     params: Tuple
-#     RETURNS:
-#     -----------
-#     forecast: Numpy array
-#     rmse: float
-#     model: SARIMAResults Class Object
-#     '''
-#     forecast = np.zeros(window)
-#     for i in xrange(window):
-#         y_temp = y[0:end+i]
-#         try:
-#             model = fit_sarima(y_temp,params[0],params[1])
-#         except:
-#             print 'SKIPPED {}-{}'.format(params[0], params[1])
-#             continue
-#         forecast[i]= model.forecast(steps=1).values[0]
-#     true = y[end:end+window].values
-#     rmse = np.sqrt(((true-forecast)**2).mean())
-#     return forecast, rmse, model
-#
-#
-# def cross_val_score(y, params, chunks, window=4):
-#     '''
-#     Break a training set into chunks and calcualtes the average
-#     rmse from forecasts. The training set gradually grow by size chunk at
-#     each iteration.
-#     -----------
-#     y: Pandas Series
-#     params: Tuple
-#     chunks: integer
-#     window: integer
-#     RETURNS:
-#     -----------
-#     rmse: float
-#     model: SARIMAResults Class Object
-#     '''
-#     length = len(y)-window
-#     chunk_size = length/chunks
-#     rmses = []
-#     for i in xrange(chunks):
-#         end_index = (i+1)*chunk_size
-#         forecast, rmse, model = rolling_predictions_sarima(y,end_index,window, params)
-#         rmses.append(rmse)
-#     return np.asarray(rmses), model
-#
-# def cross_validation_sarima(y, param, param_seasonal, k):
-#     '''
-#     Calls the cross_val_score function to conduction cross validation and return
-#     the average rmse for the given model
-#     -----------
-#     y: Pandas Series
-#     param: Tuple
-#     param_seasonal: Tuple
-#     k: integer
-#     RETURNS:
-#     -----------
-#     reults: Tuple(SARIMAXResults Object, float)
-#     '''
-#     rmses, model = cross_val_score(y, (param, param_seasonal), chunks=k)
-#     ave_rmse = rmses.mean()
-#     return (model, ave_rmse)
-#
-# def grid_search_sarima(y, pdq, seasonal_pdq, k):
-#     '''
-#     For the pdq's and seasonal_pdq's provided, fit every possible model
-#     and cross validate with a k chunks.
-#     -----------
-#     y: Pandas Series
-#     param: List of Tuples
-#     param_seasonal: List of Tuples
-#     k: Integer
-#     RETURNS:
-#     -----------
-#     results: List of Tuples
-#     '''
-#     print 'number of models {}'.format(len(pdq)*len(seasonal_pdq))
-#     results = []
-#     for param in pdq:
-#         for param_seasonal in seasonal_pdq:
-#             temp_results = cross_validation_sarima(y, param, param_seasonal, k)
-#             results.append(temp_results)
-#     return results
-#
-# def find_best_sarima(y, params, season, k=10):
-#     '''
-#     Grid search over every possible combination of p,d,q and season provided. In
-#     the cross validation, use k chunks to calculate rmse.
-#     -----------
-#     y: Pandas Series
-#     param: Tuple
-#     season: Inter
-#     k: Integer
-#     RETURNS:
-#     -----------
-#     results: SARIMAXResults Object, float
-#     '''
-#     pdq = list(itertools.product(params[0], params[1], params[2]))
-#     # s_pdq = list(itertools.product(range(0,2), range(0,2), range(0,2)))
-#     seasonal_pdq = [(x[0], x[1], x[2], season) for x in pdq]
-#     warnings.filterwarnings("ignore") # specify to ignore warning messages
-#     results = grid_search_sarima(y, pdq, seasonal_pdq, k)
-#     top_ind = np.array([r[1] for r in results]).argmin()
-#     return results[top_ind][0], results[top_ind][1]
-
+def create_dataset(dataset, look_back=1):
+	dataX, dataY = [], []
+	for i in range(len(dataset)-look_back-1):
+		a = dataset[i:(i+look_back)]
+		dataX.append(a)
+		dataY.append(dataset[i + look_back])
+	return np.array(dataX), np.array(dataY)
 
 if __name__== '__main__':
-    projects = ['project_6d8c']
-    for p in projects:
-        print'get data for {}....'.format(p)
-        project_name = p
-        df = get_data(project_name)
-        dataset_index = df.index
-        y = df['power_all']
-        y = resample(y)
+    project_name, f, season, location = sys.argv[1],sys.argv[2],int(sys.argv[3]),sys.argv[4]
+    if sys.argv[5] == 'True':
+        T_dependant = True
+    else:
+        T_dependant = False
 
-        look_back = 4
-        deltas = [i+1 for i in range(look_back)]
-        y = shift_features(y, 'power_all', deltas)
-        y_train, y_test, scaler = scale_data(y[:-24].values, y[-24:].values)
+    if location == 'local':
+        p = '../../capstone_data/Azimuth/clean/{}'.format(project_name)
+    else:
+        p = project_name
 
+    print'get data for {}....'.format(p)
+    dp = Data_preparation(p,f,T_dependant).get_data()
+    # df = dp.get_data()
+    y = dp.create_variable(agg='sum',feature='power_all')
+    dataset = y.ix[:,0]
+
+    cv_folds = 25
+    # look_back = 4
+    # deltas = [i+1 for i in range(look_back)]
+    # y = shift_features(y, 'power_all', deltas)
+
+    # split into train and test sets
+    train, test = dataset[0:-2*season], dataset[-2*season:]
+    # reshape into X=t and Y=t+1
+    look_back = 3
+    length = len(train)-1
+    chunks = min(cv_folds, length/2)
+    chunk_size = (length/2)/chunks
+    rmses=[]
+    for i in xrange(chunks+1):
+        end_index = (length/2) + (i)*chunk_size
+        print 'data length: {} chunks size: {}'.format(length, end_index)
+        # normalize the dataset
+        scaler = MinMaxScaler(feature_range=(0, 1))
+        scaler = scaler.fit(train[:end_index])
+        X, Y = create_dataset(train[:end_index+1], look_back)
+        trainX, trainY = scaler.transform(X[:-1]), scaler.transform(Y[:-1])
+        valX = scaler.transform(X[-1])
+        valY = Y[-1]
+        trainX = np.reshape(trainX, (trainX.shape[0], trainX.shape[1], 1))
+        print valX.shape
+        valX = np.reshape(valX, (1, valX.shape[0], 1))
+        # create and fit the LSTM network
         batch_size = 1
         model = Sequential()
-        layers = range(1,4)
-        # reshape input to be [samples, time steps, features]
-        trainX = np.reshape(trainX, (trainX.shape[0], trainX.shape[1], 1))
-        testX = np.reshape(testX, (testX.shape[0], testX.shape[1], 1))
+        model.add(LSTM(4, batch_input_shape=(batch_size, look_back, 1), stateful=True, return_sequences=True))
+        model.add(LSTM(4, batch_input_shape=(batch_size, look_back, 1), stateful=True))
+        model.add(Dense(1))
+        model.compile(loss='mean_squared_error', optimizer='adam')
+        for i in range(200):
+        	model.fit(trainX, trainY, epochs=1, batch_size=batch_size, verbose=2, shuffle=False)
+        	# model.reset_states()
+        valPredict = model.predict(valX, batch_size=batch_size)
+        valPredict = scaler.inverse_transform(valPredict)
+        rmse = np.sqrt((valPredict-valY)**2)
+        rmses.append(rmse)
+    val_score = np.asarray(rmses).mean()
+
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    scaler = scaler.fit(dataset[:-2*season])
+    X, Y = create_dataset(dataset, look_back)
+    trainX, trainY = scaler.transform(X[:-2*season]), scaler.transform(Y[:-2*season])
+    testX, testY = scaler.transform(X[-2*season:]), scaler.transform(Y[-2*season:])
+
+    # trainX, trainY = create_dataset(train, look_back)
+    # testX, testY = create_dataset(test, look_back)
+    # reshape input to be [samples, time steps, features]
+    trainX = np.reshape(trainX, (trainX.shape[0], trainX.shape[1], 1))
+    testX = np.reshape(testX, (testX.shape[0], testX.shape[1], 1))
+
+    # create and fit the LSTM network
+    batch_size = 1
+    model = Sequential()
+    model.add(LSTM(4, batch_input_shape=(batch_size, look_back, 1), stateful=True, return_sequences=True))
+    model.add(LSTM(4, batch_input_shape=(batch_size, look_back, 1), stateful=True))
+    model.add(Dense(1))
+    model.compile(loss='mean_squared_error', optimizer='adam')
+    for i in range(250):
+    	model.fit(trainX, trainY, epochs=1, batch_size=batch_size, verbose=2, shuffle=False)
+    	# model.reset_states()
+
+    # make predictions
+    trainPredict = model.predict(trainX, batch_size=batch_size)
+    model.reset_states()
+    testPredict = model.predict(testX, batch_size=batch_size)
+    # invert predictions
+    trainPredict = scaler.inverse_transform(trainPredict)
+    trainY = scaler.inverse_transform([trainY])
+    testPredict = scaler.inverse_transform(testPredict)
+    testY = scaler.inverse_transform([testY])
+    # calculate root mean squared error
+    trainScore = math.sqrt(mean_squared_error(trainY[0], trainPredict[:,0]))
+    print('Train Score: %.2f RMSE' % (trainScore))
+    testScore = math.sqrt(mean_squared_error(testY[0], testPredict[:,0]))
+    print('Test Score: %.2f RMSE' % (testScore))
 
 
 

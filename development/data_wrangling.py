@@ -40,39 +40,44 @@ class Results_data(object):
 
 
 class Data_preparation (object):
-    def __init__(self, project_name, freq):
+    def __init__(self, project_name, freq, T=True):
+        '''
+        Initialises the data preparation class for a given project and
+        specified temporal frequency
+        PARAMETERS
+        ----------
+        project_name: String
+        freq: String according to pandas resample() nomenclature
+        '''
         self.project_name = project_name
         self.freq = freq
         self.df = None
+        self.T = T
 
     def get_data(self):
         '''
-        Read in the featurized data for the given project_name
-        PARAMETERS:
-        -----------
-        project_name: String
-        RETURNS:
-        -----------
-        df: Pandas DataFrame with DatetimeIndex
+        Read in the featurized data for the given project_name and saves the
+        dataframe to the class for further processing
         '''
         filelocation='{}_featurized.csv'.format(self.project_name)
         df = pd.read_csv(filelocation)
         df['t'] = pd.to_datetime(df['t'], format='%Y-%m-%d %H:%M:%S')
         df.set_index('t',inplace=True)
         self.df = df
-        return self.df
+        return self
 
     def get_ready_for_sarima(self, agg, feature):
         '''
-        Calculate total power for that site
+        Selects a feature from the original dataframe, resamples it to the
+        desired frequency and handles missing data and incomplete aggregates
+        at the edges.
         PARAMETERS:
         -----------
-        df: Pandas DataFrame with DatetimeIndex
+        agg: String
         feature: String
-        freq: String following panda resample frequency nomenclature
         RETURNS:
         -----------
-        y: Pandas DataFrame with DatetimeIndex
+        y: Pandas DataFrame
         '''
         y = self.df[feature]
         y = y.fillna(y.bfill())
@@ -95,6 +100,7 @@ class Data_preparation (object):
 
         elif agg == 'mean':
             y = y.resample(self.freq).mean()
+
         if ignore_last ==True:
             y = y[:-1]
         if ignore_first ==True:
@@ -103,15 +109,36 @@ class Data_preparation (object):
         return pd.DataFrame(y)
 
     def create_variable(self, agg, feature):
+        '''
+        Creates the Y-variable you want to forecast and adds the exogenous variables
+        PARAMETERS:
+        -----------
+        agg: String ('sum' or 'mean')
+        features: String
+        RETURNS:
+        -----------
+        y: Pandas DataFrame
+        '''
         y = self.get_ready_for_sarima(agg, feature)
         y = pd.DataFrame(y)
         y = self.add_exogs(y)
         return y
 
     def add_exogs(self, y):
-        exog = self.get_ready_for_sarima(agg='mean', feature='T')
-        y['T-1'] = exog['T'].shift(1)
-        y = y.fillna(y.bfill())
+        '''
+        Add exogenous variables to the design matrix. If T==True, temperature will be added.
+        PARAMETERS:
+        -----------
+        y: Pandas DataFrame (target variable)
+        T: Boolean
+        RETURNS:
+        -----------
+        y: Pandas DataFrame
+        '''
+        if self.T:
+            exog = self.get_ready_for_sarima(agg='mean', feature='T')
+            y['T-1'] = exog['T'].shift(1)
+            y = y.fillna(y.bfill())
         y['weekday'] = y.index.dayofweek
         y['weekday'] = y['weekday'].apply(lambda x: 1 if x < 5 else 0)
         return y

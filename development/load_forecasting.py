@@ -6,93 +6,9 @@ import csv
 import statsmodels.api as sm
 from datetime import datetime
 from baseline_models import Baseline_average, Baseline_previous, baseline_rolling_predictions, baseline_cross_val_score
+from data_wrangling import Results_data, Data_preparation
 import sys
 
-def get_data(project_name):
-    '''
-    Read in the featurized data for the given project_name
-    PARAMETERS:
-    -----------
-    project_name: String
-    RETURNS:
-    -----------
-    df: Pandas DataFrame with DatetimeIndex
-    '''
-    filelocation='{}_featurized.csv'.format(project_name)
-    df = pd.read_csv(filelocation)
-    df['t'] = pd.to_datetime(df['t'], format='%Y-%m-%d %H:%M:%S')
-    df.set_index('t',inplace=True)
-    if 'power_all_old' in df.columns:
-        return df
-    else:
-        df = calculate_power(df)
-
-
-    return df
-
-def calculate_power(df):
-    '''
-    Calculate total power for that site
-    PARAMETERS:
-    -----------
-    df: Pandas DataFrame with DatetimeIndex
-    RETURNS:
-    -----------
-    df: Pandas DataFrame with DatetimeIndex
-    '''
-    df['power_1'] = df['load_v1rms'] * df['load_i1rms']
-    df['power_2'] = df['load_v2rms'] * df['load_i2rms']
-    df['power_3'] = df['load_v3rms'] * df['laod_i3rms']
-    df['power_all'] = ( df['power_1'] +df['power_2']+df['power_3'] ) * 5./12
-    return df
-
-def get_ready_for_sarima(df, agg, feature, freq='H'):
-    '''
-    Calculate total power for that site
-    PARAMETERS:
-    -----------
-    df: Pandas DataFrame with DatetimeIndex
-    feature: String
-    freq: String following panda resample frequency nomenclature
-    RETURNS:
-    -----------
-    y: Pandas DataFrame with DatetimeIndex
-    '''
-    y = df[feature]
-    y = y.fillna(y.bfill())
-    ignore_last=False
-    ignore_first=True
-
-    if freq=='H':
-        if y.index.max().minute != 0:
-            ignore_last=True
-        if y.index.min().minute != 0:
-            ignore_first=True
-    elif freq=='D':
-        if y.index.max().hour < 23:
-            ignore_last=True
-        if y.index.min().hour > 0:
-            ignore_first=True
-
-    if agg == 'sum':
-        y = y.resample(freq).sum()
-
-    elif agg == 'mean':
-        y = y.resample(freq).mean()
-    if ignore_last ==True:
-        y = y[:-1]
-    if ignore_first ==True:
-        y = y[1:]
-
-    return pd.DataFrame(y)
-
-def add_exogs(df, y, freq):
-    exog = get_ready_for_sarima(df,agg='mean', freq=f, feature='T')
-    y['T-1'] = exog['T'].shift(1)
-    y = y.fillna(y.bfill())
-    y['weekday'] = y.index.dayofweek
-    y['weekday'] = y['weekday'].apply(lambda x: 1 if x < 5 else 0)
-    return y
 
 def fit_sarimaX(y, arima_params, s_params):
     '''
@@ -111,7 +27,9 @@ def fit_sarimaX(y, arima_params, s_params):
                                     order=arima_params,
                                     seasonal_order=s_params,
                                     enforce_stationarity=False,
-                                    enforce_invertibility=False)
+                                    enforce_invertibility=False,
+                                    time_varying_regression=True,
+                                    mle_regression=False)
 
     results = mod.fit()
     return results
@@ -266,20 +184,21 @@ def find_best_sarima(y, params, season, k=10):
     return (results_s[top_ind_s][1], results_s[top_ind_s][0]), (results_sX[top_ind_sX][1], results_sX[top_ind_sX][0])
 
 if __name__== '__main__':
-    project_name = sys.argv[1]
-    f = sys.argv[2]
-    season = int(sys.argv[3])
-    location = sys.argv[4]
+    project_name, f, season, location = sys.argv[1],sys.argv[2],int(sys.argv[3]),sys.argv[4]
+    if sys.argv[5] == 'True':
+        T_dependant = True
+    else:
+        T_dependant = False
+
     if location == 'local':
         p = '../../capstone_data/Azimuth/clean/{}'.format(project_name)
     else:
         p = project_name
 
     print'get data for {}....'.format(p)
-    df = get_data(p)
-
-    y = get_ready_for_sarima(df,agg='sum',freq=f, feature='power_all')
-    y = add_exogs(df, y, freq=f)
+    dp = Data_preparation(p,f,T_dependant).get_data()
+    # df = dp.get_data()
+    y = dp.create_variable(agg='sum',feature='power_all')
     cv_folds = 25
 
     y_train = y[:-2*season]
@@ -312,29 +231,25 @@ if __name__== '__main__':
     params = (p,d,q)
     results_s, results_sX = find_best_sarima(y_train, params, season, k=cv_folds)
 
-    # For Sarima model
+    # Sarima model training results and test score
     model_s = results_s[0]
     train_rmse_s = results_s[1]
-
     best_params_s = model_s.specification
     params = (best_params_s['order'],best_params_s['seasonal_order'])
     print('SARIMA{}x{}{} - AIC:{}'.format(params[0], params[1],
                                      best_params_s['seasonal_periods'],model_s.aic))
-
     results_s = rolling_predictions_sarima(y,len(y_train),2*season,params,types=0)
     test_rmse_s = results_s['sarima'][1]
     print 'Sarima training cross validation RMSE: {}'.format(train_rmse_s)
     print'Sarima test RMSE {}'.format(test_rmse_s)
 
-    # For SarimaX model
+    # SarimaX model training results and test score
     model_sX = results_sX[0]
     train_rmse_sX = results_sX[1]
-
     best_params_sX = model_sX.specification
     params = (best_params_sX['order'],best_params_sX['seasonal_order'])
     print('SARIMA{}x{}{} - AIC:{}'.format(params[0], params[1],
                                      best_params_sX['seasonal_periods'],model_sX.aic))
-
     results_sX = rolling_predictions_sarima(y,len(y_train),2*season,params,types=2)
     test_rmse_sX = results_sX['sarimaX'][1]
     print 'SarimaX training cross validation RMSE: {}'.format(train_rmse_sX)

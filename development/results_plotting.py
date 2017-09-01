@@ -98,8 +98,6 @@ def rolling_predictions_sarima(y,end,window,params,types=1):
 
         # print exog.ix[end+i,:].values.reshape(1,exog.shape[1])
     true = endog[end:end+window].values
-    print (true-forecast_s).shape
-    print (true-forecast_sX).shape
     rmse_s = np.sqrt(((true-forecast_s)**2).mean())
     rmse_sX = np.sqrt(((true-forecast_sX)**2).mean())
     results['sarima'] = (forecast_s, rmse_s, model_s)
@@ -122,18 +120,50 @@ def baseline_forecasts(y, window, f):
 
     return forecast_b1, forecast_b2
 
-def plot_predictions(forecasts, true):
+def line_plot_predictions(forecasts, true):
     x_axis = true.index.values
-    plt.figure(figsize=(20,8))
-    plt.plot(x_axis, true.ix[:,0].values, label='measured')
-    for key, values in forecasts.iteritems():
-        plt.plot(x_axis, values, label=key)
-    plt.legend(loc='best')
+    fig, axes = plt.subplots(len(forecasts), sharex=True, sharey=True, figsize=(20,9))
+    fig.suptitle('Model performance on test data')
+    fig.text(0.5, 0.02, 'Time', ha='center')
+    fig.text(0.04, 0.5, 'Energy demand (Wh)', va='center', rotation='vertical')
+    # plt.figure(figsize=(20,8))
+    # ax[0].plot(x_axis, true.ix[:,0].values, label='measured')
+    color = ['m','b','g','o']
+    counter = 0
+    for ax, f in zip(axes,forecasts):
+        ax.plot(x_axis, true.ix[:,0].values,label='measured',color='r' ,alpha=0.75)
+        ax.plot(x_axis, f[1], '--',label=f[0], color=color[counter], alpha=0.75)
+        ax.legend(loc=1)
+        # ax.set_xlabel('Time')
+        # ax.set_ylabel('Energy Demand (Wh)')
+        counter += 1
+    pass
+
+def scatter_plot_predictions(forecasts, true):
+    x_axis = true.index.values
+    fig, axes = plt.subplots(1,len(forecasts), sharex=True, sharey=True, figsize=(30,5))
+    fig.suptitle('Model performance on test data')
+    fig.text(0.5, 0.02, 'Measured energy demand values', ha='center')
+    fig.text(0.04, 0.5, 'Forecasted energy demand (Wh)', va='center', rotation='vertical')
+    # plt.figure(figsize=(20,8))
+    # ax[0].plot(x_axis, true.ix[:,0].values, label='measured')
+    color = ['m','b','g','o']
+    counter = 0
+    for ax, f in zip(axes,forecasts):
+        ax.scatter(true.ix[:,0].values, f[1],label=f[0],color=color[counter] ,alpha=0.75)
+        ax.legend(loc=1)
+        # ax.set_xlabel('Time')
+        # ax.set_ylabel('Energy Demand (Wh)')
+        counter += 1
     pass
 
 
 if __name__== '__main__':
     project_name, f, season, location = sys.argv[1],sys.argv[2],int(sys.argv[3]),sys.argv[4]
+    if sys.argv[5] == 'True':
+        T_dependant = True
+    else:
+        T_dependant = False
 
     if location == 'local':
         p = '../../capstone_data/Azimuth/clean/{}'.format(project_name)
@@ -141,7 +171,7 @@ if __name__== '__main__':
         p = project_name
 
     print'get data for {}....'.format(p)
-    dp = Data_preparation(p,f)
+    dp = Data_preparation(p,f,T_dependant)
     df = dp.get_data()
     y = dp.create_variable(agg='sum',feature='power_all')
     tuned_results = Results_data(project_name)
@@ -149,30 +179,31 @@ if __name__== '__main__':
 
     cv_folds = 25
 
-    y_train = y[:-2*season]
-    y_test = y[-2*season:]
-    forecasts = {}
+    y_train = y[:-3*season]
+    y_test = y[-3*season:]
+    forecasts = []
 
-    forecast_b1, forecast_b2 = baseline_forecasts(y,2*season,f)
-    forecasts['forecast_b1'] = forecast_b1
+    forecast_b1, forecast_b2 = baseline_forecasts(y,3*season,f)
+    forecasts.append(['forecast_b1',forecast_b1])
     if season == 'H':
-        forecasts['forecast_b2'] = forecast_b2
+        forecasts.append(['forecast_b2',forecast_b2])
 
     print '\nFitting Sarima-X models...'
 
     # For Sarima model
-    results_s = rolling_predictions_sarima(y,len(y_train),2*season,params_s,types=0)
+    results_s = rolling_predictions_sarima(y,len(y_train),3*season,params_s,types=0)
     test_rmse_s = results_s['sarima'][1]
     forecast_s = results_s['sarima'][0]
-    forecasts['sarima'] = forecast_s
+    forecasts.append(['sarima',forecast_s])
     print'Sarima test RMSE {}'.format(test_rmse_s)
 
     # For SarimaX model
-    results_sX = rolling_predictions_sarima(y,len(y_train),2*season,params_sX,types=2)
+    results_sX = rolling_predictions_sarima(y,len(y_train),3*season,params_sX,types=2)
     test_rmse_sX = results_sX['sarimaX'][1]
     forecast_sX = results_sX['sarimaX'][0]
-    forecasts['sarimaX'] = forecast_sX
+    forecasts.append(['sarimax',forecast_sX])
     print'SarimaX test RMSE {}'.format(test_rmse_sX)
     #
-    # plot_predictions(forecasts, y_test)
-    # plt.show()
+    # line_plot_predictions(forecasts, y_test)
+    scatter_plot_predictions(forecasts, y_test)
+    plt.show()
