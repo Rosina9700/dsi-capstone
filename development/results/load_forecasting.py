@@ -105,7 +105,7 @@ def rolling_predictions_sarima(y,end,window,params,types=1):
     return results
 
 
-def cross_val_score(y, params, chunks,season, window=1):
+def cross_val_score(y, params, chunks, window=1):
     '''
     Break a training set into chunks and calcualtes the average
     rmse from forecasts. The training set gradually grow by size chunk at
@@ -122,20 +122,19 @@ def cross_val_score(y, params, chunks,season, window=1):
     '''
 
     length = len(y.ix[:,0])-window
-    start = max(length/2, season)
-    chunks = min(length-start, chunks)
-    chunk_size = (length-start)/chunks
+    chunks = min(chunks, length/2)
+    chunk_size = (length/2)/chunks
     rmses_s = []
     rmses_sX = []
     for i in xrange(chunks+1):
-        end_index = (start) + (i)*chunk_size
+        end_index = (length/2) + (i)*chunk_size
         print 'data length: {} chunks size: {}'.format(length, end_index)
         results = rolling_predictions_sarima(y,end_index,window, params)
         rmses_s.append(results['sarima'][1])
         rmses_sX.append(results['sarimaX'][1])
     return (np.asarray(rmses_s).mean(), results['sarima'][2]), (np.asarray(rmses_sX).mean(), results['sarimaX'][2])
 
-def grid_search_sarima(y, pdq, seasonal_pdq, k, season):
+def grid_search_sarima(y, pdq, seasonal_pdq, k):
     '''
     For the pdq's and seasonal_pdq's provided, fit every possible model
     and cross validate with a k chunks.
@@ -153,7 +152,7 @@ def grid_search_sarima(y, pdq, seasonal_pdq, k, season):
     results_sX = []
     for param in pdq:
         for param_seasonal in seasonal_pdq:
-            res_s, res_sX = cross_val_score(y, (param, param_seasonal), k, season)
+            res_s, res_sX = cross_val_score(y, (param, param_seasonal), k)
             results_s.append(res_s)
             results_sX.append(res_sX)
     return results_s, results_sX
@@ -178,7 +177,7 @@ def find_best_sarima(y, params, season, k=10):
     else:
         seasonal_pdq = [(x[0], 0, x[2], season) for x in s_pdq]
     warnings.filterwarnings("ignore") # specify to ignore warning messages
-    results_s, results_sX = grid_search_sarima(y, pdq, seasonal_pdq, k, season)
+    results_s, results_sX = grid_search_sarima(y, pdq, seasonal_pdq, k)
     # results_s, results_sX = grid_search_sarima(y, [(0,1,1)], [(1,0,1,season)], k)
     top_ind_s = np.nanargmin(np.array([r[0] for r in results_s]))
     top_ind_sX = np.nanargmin(np.array([r[0] for r in results_sX]))

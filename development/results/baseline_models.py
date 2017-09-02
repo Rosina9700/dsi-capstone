@@ -105,13 +105,11 @@ def baseline_cross_val_score(model, y, chunks, window, season):
     model: Baseline Class Object
     '''
     length = len(y.ix[:,0])-window
-    start = max(length/2, season)
-    chunks = min(length-start, chunks)
-    chunk_size = (length-start)/chunks
+    chunks = min(length/2, chunks, season)
+    chunk_size = (length/2)/chunks
     rmses = []
-    print length, start, chunks, chunk_size
     for i in xrange(chunks+1):
-        end_index = start + (i)*chunk_size
+        end_index = (length/2) + (i)*chunk_size
         forecast, rmse, model = baseline_rolling_predictions(model, y,end_index,window)
         rmses.append(rmse)
     return np.asarray(rmses).mean(), model

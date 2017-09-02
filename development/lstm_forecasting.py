@@ -77,7 +77,7 @@ if __name__== '__main__':
     y = dp.create_variable(agg='sum',feature='power_all')
     dataset = y.ix[:,0]
 
-    cv_folds = 25
+    cv_folds = 5
     # look_back = 4
     # deltas = [i+1 for i in range(look_back)]
     # y = shift_features(y, 'power_all', deltas)
@@ -85,40 +85,58 @@ if __name__== '__main__':
     # split into train and test sets
     train, test = dataset[0:-2*season], dataset[-2*season:]
     # reshape into X=t and Y=t+1
-    look_back = 3
-    length = len(train)-1
-    chunks = min(cv_folds, length/2)
-    chunk_size = (length/2)/chunks
-    rmses=[]
-    for i in xrange(chunks+1):
-        end_index = (length/2) + (i)*chunk_size
-        print 'data length: {} chunks size: {}'.format(length, end_index)
-        # normalize the dataset
-        scaler = MinMaxScaler(feature_range=(0, 1))
-        scaler = scaler.fit(train[:end_index])
-        X, Y = create_dataset(train[:end_index+1], look_back)
-        trainX, trainY = scaler.transform(X[:-1]), scaler.transform(Y[:-1])
-        valX = scaler.transform(X[-1])
-        valY = Y[-1]
-        trainX = np.reshape(trainX, (trainX.shape[0], trainX.shape[1], 1))
-        print valX.shape
-        valX = np.reshape(valX, (1, valX.shape[0], 1))
-        # create and fit the LSTM network
-        batch_size = 1
-        model = Sequential()
-        model.add(LSTM(4, batch_input_shape=(batch_size, look_back, 1), stateful=True, return_sequences=True))
-        model.add(LSTM(4, batch_input_shape=(batch_size, look_back, 1), stateful=True))
-        model.add(Dense(1))
-        model.compile(loss='mean_squared_error', optimizer='adam')
-        for i in range(200):
-        	model.fit(trainX, trainY, epochs=1, batch_size=batch_size, verbose=2, shuffle=False)
-        	# model.reset_states()
-        valPredict = model.predict(valX, batch_size=batch_size)
-        valPredict = scaler.inverse_transform(valPredict)
-        rmse = np.sqrt((valPredict-valY)**2)
-        rmses.append(rmse)
-    val_score = np.asarray(rmses).mean()
+    look_backs = [3,4]
+    epochs = [100,200]
+    batch_sizes = [1]
+    nodes = [3,4]
+    combo = []
+    combo_rmse = []
+    for look_back in look_backs:
+        for epoch in epochs:
+            for batch_size in batch_sizes:
+                for node in nodes:
+                    combo.append((look_back, epoch, batch_size, node))
+                    # look_back = 3
+                    length = len(train)-1
+                    chunks = min(cv_folds, length/2)
+                    chunk_size = (length/2)/chunks
+                    rmses=[]
+                    for i in xrange(chunks+1):
+                        end_index = (length/2) + (i)*chunk_size
+                        print 'data length: {} chunks size: {}'.format(length, end_index)
+                        # normalize the dataset
+                        scaler = MinMaxScaler(feature_range=(0, 1))
+                        scaler = scaler.fit(train[:end_index])
+                        X, Y = create_dataset(train[:end_index+1], look_back)
+                        trainX, trainY = scaler.transform(X[:-1]), scaler.transform(Y[:-1])
+                        valX = scaler.transform(X[-1])
+                        valY = Y[-1]
+                        trainX = np.reshape(trainX, (trainX.shape[0], trainX.shape[1], 1))
+                        print valX.shape
+                        valX = np.reshape(valX, (1, valX.shape[0], 1))
+                        # create and fit the LSTM network
+                        # batch_size = 1
+                        model = Sequential()
+                        model.add(LSTM(node, batch_input_shape=(batch_size, look_back, 1), stateful=True, return_sequences=True))
+                        model.add(LSTM(node, batch_input_shape=(batch_size, look_back, 1), stateful=True))
+                        model.add(Dense(1))
+                        model.compile(loss='mean_squared_error', optimizer='adam')
+                        for i in range(epoch):
+                        	model.fit(trainX, trainY, epochs=1, batch_size=batch_size, verbose=2, shuffle=False)
+                        	# model.reset_states()
+                        valPredict = model.predict(valX, batch_size=batch_size)
+                        valPredict = scaler.inverse_transform(valPredict)
+                        rmse = np.sqrt((valPredict-valY)**2)
+                        rmses.append(rmse)
+                    score = np.asarray(rmses).mean()
+                    combo_rmse.append(score)
+                    print combo
+                    print score
+    ind_best = np.array(combo_rmse).argmin()
+    best_combo = combo[ind_best]
+    best_combo_rmse = combo_rmse[ind_best]
 
+    look_back = best_combo[0]
     scaler = MinMaxScaler(feature_range=(0, 1))
     scaler = scaler.fit(dataset[:-2*season])
     X, Y = create_dataset(dataset, look_back)
@@ -132,13 +150,13 @@ if __name__== '__main__':
     testX = np.reshape(testX, (testX.shape[0], testX.shape[1], 1))
 
     # create and fit the LSTM network
-    batch_size = 1
+    batch_size = best_combo[2]
     model = Sequential()
-    model.add(LSTM(4, batch_input_shape=(batch_size, look_back, 1), stateful=True, return_sequences=True))
-    model.add(LSTM(4, batch_input_shape=(batch_size, look_back, 1), stateful=True))
+    model.add(LSTM(best_combo[3], batch_input_shape=(batch_size, look_back, 1), stateful=True, return_sequences=True))
+    model.add(LSTM(best_combo[3], batch_input_shape=(batch_size, look_back, 1), stateful=True))
     model.add(Dense(1))
     model.compile(loss='mean_squared_error', optimizer='adam')
-    for i in range(250):
+    for i in range(best_combo[1]):
     	model.fit(trainX, trainY, epochs=1, batch_size=batch_size, verbose=2, shuffle=False)
     	# model.reset_states()
 
@@ -152,6 +170,7 @@ if __name__== '__main__':
     testPredict = scaler.inverse_transform(testPredict)
     testY = scaler.inverse_transform([testY])
     # calculate root mean squared error
+    print 'Cross val score {}'.format(best_combo_rmse)
     trainScore = math.sqrt(mean_squared_error(trainY[0], trainPredict[:,0]))
     print('Train Score: %.2f RMSE' % (trainScore))
     testScore = math.sqrt(mean_squared_error(testY[0], testPredict[:,0]))

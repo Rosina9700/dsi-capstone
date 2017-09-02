@@ -25,10 +25,17 @@ class Results_data(object):
         return (p,d,q,s)
 
     def get_data(self):
-        filelocation = 'output_{}_daily.csv'.format(self.project_name)
-        df = pd.read_csv(filelocation,sep=';')
-        df['order'] = df['sarimax_params'].apply(self.get_order)
-        df['seasonal_order'] = df['sarimax_params'].apply(self.get_seasonal_order)
+        filelocation = '{}_fbeta.csv'.format(self.project_name)
+        df1 = pd.read_csv(filelocation,sep=';')
+        df1['order'] = df1['sarimax_params'].apply(self.get_order)
+        df1['seasonal_order'] = df1['sarimax_params'].apply(self.get_seasonal_order)
+        df1['beta_var'] = 0
+        filelocation = '{}_vbeta.csv'.format(self.project_name)
+        df2 = pd.read_csv(filelocation,sep=';')
+        df2['order'] = df2['sarimax_params'].apply(self.get_order)
+        df2['seasonal_order'] = df2['sarimax_params'].apply(self.get_seasonal_order)
+        df2['beta_var'] = 1
+        df = df1.append(df2)
         self.df = df
         return self
 
