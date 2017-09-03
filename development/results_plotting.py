@@ -146,6 +146,7 @@ def line_plot_predictions(project_name, forecasts, true):
     for ax, f in zip(axes,forecasts):
         ax.plot(x_axis, true.ix[:,0].values,label='measured',color='r' ,alpha=0.75)
         ax.plot(x_axis, f[1], '--',label=f[0], color=color[counter], alpha=0.75)
+        ax.fill_between(x_axis, true.iloc[:,-1]*true.ix[:,0], alpha=0.4, label='Weekday')
         ax.legend(loc=1)
         # ax.set_xlabel('Time')
         # ax.set_ylabel('Energy Demand (Wh)')

@@ -15,6 +15,7 @@ def plot_all_data(df,columns):
     '''
     years = df['year'].unique()
     df['month'] = df.index.month
+    df['weekday'] = df['dayofweek'].apply(lambda x: 1 if x < 5 else 0)
     y_m_combinations = []
     for y in years:
         months = df[(df['year'] == y)]['month'].unique()
@@ -27,8 +28,10 @@ def plot_all_data(df,columns):
         temp = df[(df['year'] == c[0]) & (df['month'] == c[1])]
         for col in columns:
             ax.plot(temp.index, temp[col]/df[col].max())
+            ax.fill_between(temp.index, temp[col]/df[col].max()*temp['weekday'],alpha=0.5)
         ax.set_title('timeseries for {}, {}'.format(c[0],c[1]))
     plt.show()
+    df.drop('weekday',axis=1, inplace=True)
     pass
 
 def plot_time_frame(df,start,end,columns):

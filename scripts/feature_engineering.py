@@ -2,13 +2,33 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 
-def get_clean_data(filename):
-    df = pd.read_csv('../../capstone_data/Azimuth/clean/{}'.format(filename))
-    df['t'] = pd.to_datetime(df['t'], format='%Y-%m-%d %H:%M:%S')
+def get_clean_data(path,time_col):
+    '''
+    Read in the clean data from the specified path. Pass through the column name
+    which contains the timestamp
+    PARAMETERS
+    ----------
+    path: String
+    time_col: String
+    RETURNS
+    --------
+    df: Pandas DataFrame with DatetimeIndex
+    '''
+    df = pd.read_csv(path)
+    df['t'] = pd.to_datetime(df[time_col], format='%Y-%m-%d %H:%M:%S')
     df.set_index('t',inplace=True)
     return df
 
 def get_relay_start(df):
+    '''
+    Create a flag to say whether an outage started that hour.
+    PARAMETERS
+    ----------
+    df: Pandas Dataframe
+    RETURNS
+    --------
+    df: Pandas DataFrame with DatetimeIndex
+    '''
     df['begin_gen'] = df.relay_est.shift(1)
     df['begin_gen'] = df['relay_est']-df['begin_gen']
     df['begin_gen'] = df['begin_gen'].apply(lambda x: 1 if x== 1 else 0)
@@ -74,8 +94,14 @@ def create_dummies(df, columns):
 
 
 def get_weather_data():
-    weather_16 = pd.read_csv('../../capstone_data/merra_data/accra_2016/weather_data_Accra_2016.csv')
-    weather_17 = pd.read_csv('../../capstone_data/merra_data/accra_2017/weather_data_Accra_2017.csv')
+    '''
+    Read in the merra weather data for 2016 and 2017, saved as csv
+    RETURNS
+    --------
+    weather: Pandas DataFrame with all weather data
+    '''
+    weather_16 = pd.read_csv('merra_data/accra_2016/weather_data_Accra_2016.csv')
+    weather_17 = pd.read_csv('merra_data/accra_2017/weather_data_Accra_2017.csv')
     # append 2017 to 2016
     weather = weather_16.append(weather_17, ignore_index=True)
     # create column with datetime timestamp
@@ -92,6 +118,17 @@ def get_weather_data():
     return weather
 
 def add_weather_data(left, right):
+    '''
+    Left join between the energy demand data and the weather data. Handles the
+    scenario where the frequency of energy data is less than the weather
+    PARAMETERS
+    ----------
+    left: Pandas DataFrame
+    right: Pandas DataFrame
+    RETURNS
+    --------
+    weather: Pandas DataFrame with all weather data
+    '''
     left['datetime_hr'] = left.index.values
     left['datetime_hr'] = left['datetime_hr'].apply(lambda x: datetime(x.year, x.month, x.day, x.hour))
     new_df = left.join(right,how='left',on=['datetime_hr'])
@@ -129,19 +166,80 @@ def time_window_aggregate(df, feature,func,time_window):
     return df
 
 def create_time_aggregates(df,params):
+    '''
+    For the dataframe provided and parameter list with instructions, create new
+    features of time aggregate values
+    PARAMETERS
+    ----------
+    df: Pandas DataFrame
+    Params: Nested dictionary
+    RETURNS
+    --------
+    df: Pandas DataFrame
+    '''
     for key, values in params.iteritems():
         for k, v in values.iteritems():
             for f in v:
                 df = time_window_aggregate(df,f,k,key)
     return df
 
+def outage_smoothing(df, feature, time_window):
+    '''
+    For sites where there are outages and no generator, we may want to smooth over
+    the outage periods so that they are low power events or NaNs in the data. this
+    is required for some of the timeseries prediction.
+    PARAMETERS
+    ----------
+    df: Pandas DataFrame
+    feature: column name of smooth
+    time_window: time window to aggregate over, use convention used in Pandas
+                 reindex or rolling:http://pandas.pydata.org/pandas-docs/stable/timeseries.html#offset-aliases
+    RETURNS
+    -------
+    df: Pandas DataFrame
+    '''
+    temp = pd.DataFrame(df[feature].shift(1))
+    mean = temp.rolling(time_window,min_periods=1).mean()
+    mean = mean.fillna(temp.bfill())
+    std = temp.rolling(time_window,min_periods=1).std()
+    std = std.fillna(temp.bfill())
+    combined = (mean - 1 * std)
+    result = np.where(temp < combined,None, temp)
+    col_name = feature+'_old'
+    df[col_name] = df[feature]
+    df[feature] = result
+    df[feature] = df[feature].fillna(method='ffill')
+    return df
+
+def calculate_power(df):
+    '''
+    Calculate total power for that site
+    PARAMETERS:
+    -----------
+    df: Pandas DataFrame with DatetimeIndex
+    RETURNS:
+    -----------
+    df: Pandas DataFrame with DatetimeIndex
+    '''
+    df['power_1'] = df['load_v1rms'] * df['load_i1rms']
+    df['power_2'] = df['load_v2rms'] * df['load_i2rms']
+    df['power_3'] = df['load_v3rms'] * df['laod_i3rms']
+    df['power_all'] = ( df['power_1'] +df['power_2']+df['power_3'] ) * 5./12
+    return df
+
 if __name__=='__main__':
-    project_name = 'project_5526'
+    project_name, smooth = sys.argv[1],sys.argv[2]
+    project_name = 'project_5526_2'
     # read in data
     print 'reading clean data...'
     filename = '{}_clean.csv'.format(project_name)
-    df = get_clean_data(filename)
+    path = '../capstone_data/Azimuth/clean/{}'.format(filename)
+    df = get_clean_data(path, 't')
     df = get_relay_start(df)
+    df = calculate_power(df)
+    if smooth == 'y':
+        df = outage_smoothing(df, 'power_all', (2*24))
+
     # created shifted features
     print 'creating shifted features...'
     df = shift_features(df, ['load_v1rms','load_v2rms','load_v3rms',
@@ -170,8 +268,9 @@ if __name__=='__main__':
 
     df3 = add_weather_data(df2, weather)
     print 'writing to csv...'
-    filelocation='../../capstone_data/Azimuth/clean/{}_featurized.csv'.format(project_name)
+    filelocation='../capstone_data/Azimuth/clean/{}_featurized.csv'.format(project_name)
     df3.to_csv(filelocation)
+
 
     # drop continuous outage points
     # df2 = df[~((df['relay_est']==1)&(df['relay_est-1']==1))]
