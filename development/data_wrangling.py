@@ -5,11 +5,27 @@ import numpy as np
 from datetime import datetime
 
 class Results_data(object):
+    '''
+    Class to handle reading in data from the results files for a given location
+    '''
     def __init__(self, project_name):
+        '''
+        Initialises the class, need to pass the project name which is included in
+        all the results file names
+        PARAMETERS
+        ----------
+        project_name: String
+        '''
         self.project_name = project_name
         self.df = None
 
     def get_order(self, param_string):
+        '''
+        Extracts the order for a sarimax model
+        PARAMETERS
+        ----------
+        param_string: String
+        '''
         split = param_string.split("'order': (")
         p = int(split[1][0])
         d = int(split[1][3])
@@ -17,6 +33,12 @@ class Results_data(object):
         return (p,d,q)
 
     def get_seasonal_order(self, param_string):
+        '''
+        Extracts the seasonal order for a sarimax model
+        PARAMETERS
+        ----------
+        param_string: String
+        '''
         split = param_string.split("'seasonal_order': (")
         p = int(split[1][0])
         d = int(split[1][3])
@@ -25,6 +47,10 @@ class Results_data(object):
         return (p,d,q,s)
 
     def get_data(self):
+        '''
+        Gets the data from csv outputs from the different models and save the
+        resulting dataframe as an attribute
+        '''
         filelocation = '{}_fbeta.csv'.format(self.project_name)
         df1 = pd.read_csv(filelocation,sep=';')
         df1['order'] = df1['sarimax_params'].apply(self.get_order)
@@ -40,10 +66,22 @@ class Results_data(object):
         return self
 
     def get_params(self):
+        '''
+        Gets the parameters for the sarima, sarimaX and sarimaX with time varying
+        residual models
+        RETURNS
+        -------
+        sarima_params: Tuple (order, seasonal_order)
+        sarimaX_params: Tuple (order, seasonal_order)
+        sarimaX_v_params: Tuple (order, seasonal_order)
+        '''
         temp = self.df
-        sarima_params = (temp.iloc[0,7],temp.iloc[0,8])
-        sarimaX_params = (temp.iloc[2,7],temp.iloc[2,8])
-        return sarima_params, sarimaX_params
+        fixed_b = temp[temp['beta_var'] == 0]
+        sarima_params = (fixed_b.iloc[0]['order'],fixed_b.iloc[0]['seasonal_order'])
+        sarimaX_params = (fixed_b.iloc[2]['order'],fixed_b.iloc[2]['seasonal_order'])
+        var_b = temp[temp['beta_var'] == 1]
+        sarimaX_v_params = (var_b.iloc[2]['order'],var_b.iloc[2]['seasonal_order'])
+        return sarima_params, sarimaX_params, sarimaX_v_params
 
 
 class Data_preparation (object):
