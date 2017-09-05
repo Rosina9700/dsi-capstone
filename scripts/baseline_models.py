@@ -1,5 +1,10 @@
 import pandas as pd
 import numpy as np
+import os
+import sys
+module_path = os.path.abspath(os.path.join('..'))
+if module_path not in sys.path:
+    sys.path.append(module_path)
 
 class Baseline_average(object):
     def __init__(self, freq):
@@ -115,3 +120,27 @@ def baseline_cross_val_score(model, y, chunks, window, season):
         forecast, rmse, model = baseline_rolling_predictions(model, y,end_index,window)
         rmses.append(rmse)
     return np.asarray(rmses).mean(), model
+
+def baseline_forecasts(y, window, f):
+    '''
+    Gives the rolling predictions over a given for both baseline model
+    -----------
+    model: Baseline Class Object
+    y: Pandas Series
+    window: integer
+    RETURNS:
+    -----------
+    forecasts_b1: Numpy array
+    forecasts_b2: Numpy array
+    '''
+    print '\nbaseline - previous...'
+    b_previous = Baseline_previous()
+    forecast_b1, b1_test_rmse, model = baseline_rolling_predictions(b_previous, pd.DataFrame(y.ix[:,0]),len(y)-window,window)
+    print 'Baseline-previous test RMSE {}'.format(b1_test_rmse)
+
+    print 'baseline - averages....'
+    b_average = Baseline_average(f)
+    forecast_b2, b2_test_rmse, model = baseline_rolling_predictions(b_average, pd.DataFrame(y.ix[:,0]),len(y)-window,window)
+    print 'Baseline-averages test RMSE {}'.format(b2_test_rmse)
+
+    return forecast_b1, forecast_b2

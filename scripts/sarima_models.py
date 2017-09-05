@@ -8,7 +8,11 @@ from collections import defaultdict
 from datetime import datetime
 from baseline_models import Baseline_average, Baseline_previous, baseline_rolling_predictions, baseline_cross_val_score
 from data_wrangling import Results_data, Data_preparation
+import os
 import sys
+module_path = os.path.abspath(os.path.join('..'))
+if module_path not in sys.path:
+    sys.path.append(module_path)
 
 
 class Sarima_predictions(object):
@@ -83,7 +87,7 @@ class Sarima_predictions(object):
                 model = self.fit(y_temp)
                 if self.model_type ==0:
                     forecast[i]= model.forecast(steps=1).values[0]
-                elif self.model_type == 1:
+                elif (self.model_type == 1)|(self.model_type == 2):
                     f_exog = exog.ix[end+i,:].values.reshape(1,exog.shape[1])
                     forecast[i]= model.forecast(steps=1, exog=f_exog).values[0]
             except:

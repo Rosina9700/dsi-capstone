@@ -1,6 +1,11 @@
 import numpy as np
 import pandas as pd
 from datetime import datetime
+import os
+import sys
+module_path = os.path.abspath(os.path.join('..'))
+if module_path not in sys.path:
+    sys.path.append(module_path)
 
 def get_clean_data(path,time_col):
     '''

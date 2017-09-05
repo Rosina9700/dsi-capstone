@@ -3,6 +3,11 @@ import itertools
 import pandas as pd
 import numpy as np
 from datetime import datetime
+import os
+import sys
+module_path = os.path.abspath(os.path.join('..'))
+if module_path not in sys.path:
+    sys.path.append(module_path)
 
 class Results_data(object):
     '''
